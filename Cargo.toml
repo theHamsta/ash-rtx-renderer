@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["vulkan", "ash", "RTX"]
 categories = ["graphics"]
-repository = "https://github.com/theHamsta/highlight-assertions"
+repository = "https://github.com/theHamsta/ash-rtx-renderer"
 
 
 [dependencies]
