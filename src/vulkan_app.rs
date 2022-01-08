@@ -13,14 +13,14 @@ struct Functions {
 }
 
 pub struct VulkanApp {
-    entry: ash::Entry,
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
-    physical_device: vk::PhysicalDevice,
+    //_entry: ash::Entry,
+    //_physical_device: vk::PhysicalDevice,
+    graphics_queue: vk::Queue,
     device: ash::Device,
     swapchain: Swapchain,
     frames: Vec<Frame>,
-    graphics_queue: vk::Queue,
     functions: Functions,
     command_pool: vk::CommandPool,
 }
@@ -131,14 +131,12 @@ impl VulkanApp {
 
             let surface_fn = ash::extensions::khr::Surface::new(&entry, &instance);
             Ok(Self {
-                entry,
                 instance,
                 surface,
                 swapchain,
                 frames,
                 graphics_queue,
                 device,
-                physical_device,
                 command_pool,
                 functions: Functions {
                     surface: surface_fn,
@@ -149,9 +147,6 @@ impl VulkanApp {
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) -> anyhow::Result<()> {
-        unsafe {
-            self.device.device_wait_idle()?;
-        }
         self.swapchain.update(vk::Extent2D {
             width: size.width,
             height: size.height,
