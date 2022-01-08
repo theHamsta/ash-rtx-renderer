@@ -18,7 +18,7 @@ mod vulkan_app;
 #[clap(author, version, about)]
 struct Args {
     /// Mesh file to render
-    #[clap(short, long)]
+    #[clap(short, long, default_value("/home/stephan/projects/ply-rs/example_plys/house_2_ok_ascii.ply".into()))]
     mesh_file: PathBuf,
 }
 
@@ -28,9 +28,10 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let mesh = Mesh::from_file(&args.mesh_file)?;
     info!(
-        "Loaded mesh with {} triangles and {} vertices.",
+        "Loaded mesh with {} triangles and {} vertices. vertex_normals: {}.",
         mesh.num_triangles(),
-        mesh.num_vertices()
+        mesh.num_vertices(),
+        mesh.has_vertex_normals()
     );
 
     let event_loop = EventLoop::new();

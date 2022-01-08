@@ -14,8 +14,10 @@ repository = "https://github.com/theHamsta/ash-rtx-renderer"
 once_cell = "1.8"
 anyhow = "1.0"
 clap = { version = "3.0.5", features = ["derive"] }
-ash = { version = "0.35.0", default-features = false, features = ["linked"]}
-ash-window = { version = "0.9"}
+ash = { git = "https://github.com/Ralith/ash", branch = "swapchain"}
+#https://github.com/MaikKlein/ash/pull/506
+ash-swapchain = {git = "https://github.com/Ralith/ash", branch = "swapchain" }
+ash-window = { git = "https://github.com/Ralith/ash", branch = "swapchain" }
 raw-window-handle = "0.4"
 winit = "0.26.1"
 ply-rs = "0.1.3"

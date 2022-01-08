@@ -1,10 +1,12 @@
-use ash::vk;
+use ash::{extensions::khr, vk};
+use ash_swapchain::Swapchain;
 use winit::window::Window;
 
 pub struct VulkanApp {
     entry: ash::Entry,
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
+    swapchain: Swapchain,
 }
 
 impl VulkanApp {
@@ -21,14 +23,70 @@ impl VulkanApp {
                 .application_info(&app_desc)
                 .enabled_extension_names(&instance_extensions);
 
-            let entry = ash::Entry::linked();
+            let entry = ash::Entry::new();
             let instance = entry.create_instance(&instance_desc, None)?;
             let surface = ash_window::create_surface(&entry, &instance, window, None)?;
+            let surface_fn = khr::Surface::new(&entry, &instance);
+
+            let (physical_device, queue_family_index) = instance
+                .enumerate_physical_devices()
+                .unwrap()
+                .into_iter()
+                .find_map(|dev| {
+                    let (family, _) = instance
+                        .get_physical_device_queue_family_properties(dev)
+                        .into_iter()
+                        .enumerate()
+                        .find(|(_index, info)| {
+                            info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                        })?;
+                    let family = family as u32;
+                    let supported = surface_fn
+                        .get_physical_device_surface_support(dev, family, surface)
+                        .unwrap();
+                    if !supported {
+                        return None;
+                    }
+                    Some((dev, family))
+                })
+                .unwrap();
+
+            let device = instance
+                .create_device(
+                    physical_device,
+                    &vk::DeviceCreateInfo::builder()
+                        .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
+                        .queue_create_infos(&[vk::DeviceQueueCreateInfo::builder()
+                            .queue_family_index(queue_family_index)
+                            .queue_priorities(&[1.0])
+                            .build()]),
+                    None,
+                )
+                .unwrap();
+            let swapchain_fn = khr::Swapchain::new(&instance, &device);
+            let queue = device.get_device_queue(queue_family_index, queue_family_index);
+
+            let size = window.inner_size();
+            let swapchain = Swapchain::new(
+                &ash_swapchain::Functions {
+                    device: &device,
+                    swapchain: &swapchain_fn,
+                    surface: &surface_fn,
+                },
+                ash_swapchain::Options::default(),
+                surface,
+                physical_device,
+                vk::Extent2D {
+                    width: size.width,
+                    height: size.height,
+                },
+            );
 
             Ok(Self {
                 entry,
                 instance,
                 surface,
+                swapchain,
             })
         }
     }
