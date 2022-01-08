@@ -1,6 +1,18 @@
-use ash::{extensions::khr, vk};
+use std::os::raw::c_char;
+
+use ash::{
+    extensions::khr::{self, GetPhysicalDeviceProperties2},
+    vk,
+};
 use ash_swapchain::Swapchain;
+use log::{error, info};
 use winit::{dpi::PhysicalSize, window::Window};
+
+#[derive(thiserror::Error, Debug)]
+pub enum VulkanError {
+    #[error("Found no device with surface support")]
+    NoDeviceForSurfaceFound,
+}
 
 struct Frame {
     cmd: vk::CommandBuffer,
@@ -29,10 +41,11 @@ impl VulkanApp {
     pub fn new(window: &Window) -> anyhow::Result<Self> {
         unsafe {
             let surface_extensions = ash_window::enumerate_required_extensions(window)?;
-            let instance_extensions = surface_extensions
+            let mut instance_extensions = surface_extensions
                 .iter()
                 .map(|ext| ext.as_ptr())
                 .collect::<Vec<_>>();
+            instance_extensions.push(khr::GetPhysicalDeviceProperties2::name().as_ptr());
             let app_desc =
                 vk::ApplicationInfo::builder().api_version(vk::make_api_version(0, 1, 0, 0));
             let instance_desc = vk::InstanceCreateInfo::builder()
@@ -49,6 +62,15 @@ impl VulkanApp {
                 .unwrap()
                 .into_iter()
                 .find_map(|dev| {
+                    let mut props = vk::PhysicalDeviceProperties2KHR::default();
+                    GetPhysicalDeviceProperties2::new(&entry, &instance)
+                        .get_physical_device_properties2(dev, &mut props);
+                    info!(
+                        "{:?}",
+                        ::std::ffi::CStr::from_ptr(
+                            props.properties.device_name.as_ptr() as *const c_char
+                        )
+                    );
                     let (family, _) = instance
                         .get_physical_device_queue_family_properties(dev)
                         .into_iter()
@@ -57,15 +79,31 @@ impl VulkanApp {
                             info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                         })?;
                     let family = family as u32;
-                    let supported = surface_fn
-                        .get_physical_device_surface_support(dev, family, surface)
-                        .unwrap();
-                    if !supported {
-                        return None;
+                    let supported =
+                        surface_fn.get_physical_device_surface_support(dev, family, surface);
+                    match supported {
+                        Ok(false) => return None,
+                        Ok(true) => (),
+                        Err(err) => {
+                            error!(
+                                "Failed to initialize surface for {:?}: {err}",
+                                ::std::ffi::CStr::from_ptr(
+                                    props.properties.device_name.as_ptr() as *const c_char
+                                )
+                            );
+                            return None;
+                        }
                     }
+
+                    info!(
+                        "Selected {:?}",
+                        ::std::ffi::CStr::from_ptr(
+                            props.properties.device_name.as_ptr() as *const c_char
+                        )
+                    );
                     Some((dev, family))
                 })
-                .unwrap();
+                .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
 
             let device = instance
                 .create_device(
@@ -80,7 +118,7 @@ impl VulkanApp {
                 )
                 .unwrap();
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
-            let graphics_queue = device.get_device_queue(queue_family_index, queue_family_index);
+            let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let mut swapchain_options = ash_swapchain::Options::default();
             swapchain_options.frames_in_flight(4);
 
