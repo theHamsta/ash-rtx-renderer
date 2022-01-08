@@ -1,6 +1,6 @@
 use ash::{extensions::khr, vk};
 use ash_swapchain::Swapchain;
-use winit::window::Window;
+use winit::{dpi::PhysicalSize, window::Window};
 
 struct Frame {
     cmd: vk::CommandBuffer,
@@ -81,8 +81,8 @@ impl VulkanApp {
                 .unwrap();
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
             let graphics_queue = device.get_device_queue(queue_family_index, queue_family_index);
-            let mut options = ash_swapchain::Options::default();
-            options.frames_in_flight(4);
+            let mut swapchain_options = ash_swapchain::Options::default();
+            swapchain_options.frames_in_flight(4);
 
             let size = window.inner_size();
             let swapchain = Swapchain::new(
@@ -91,7 +91,7 @@ impl VulkanApp {
                     swapchain: &swapchain_fn,
                     surface: &surface_fn,
                 },
-                options,
+                swapchain_options,
                 surface,
                 physical_device,
                 vk::Extent2D {
@@ -146,6 +146,17 @@ impl VulkanApp {
                 },
             })
         }
+    }
+
+    pub fn resize(&mut self, size: PhysicalSize<u32>) -> anyhow::Result<()> {
+        unsafe {
+            self.device.device_wait_idle()?;
+        }
+        self.swapchain.update(vk::Extent2D {
+            width: size.width,
+            height: size.height,
+        });
+        Ok(())
     }
 
     fn draw(&mut self, draw_fn: impl Fn(&vk::CommandBuffer)) -> anyhow::Result<()> {

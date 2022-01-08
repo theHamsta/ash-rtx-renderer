@@ -3,6 +3,21 @@
 version = 3
 
 [[package]]
+name = "addr2line"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9ecd88a8c8378ca913a680cd98f0f13ac67383d35993f86c90a70e3f137816b"
+dependencies = [
+ "gimli",
+]
+
+[[package]]
+name = "adler"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
+
+[[package]]
 name = "aho-corasick"
 version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -23,14 +38,21 @@ version = "0.34.0+1.2.203"
 source = "git+https://github.com/Ralith/ash?branch=swapchain#971d4cfd646fb2b48122979f5f98c5a5eadf7825"
 
 [[package]]
+name = "ash"
+version = "0.35.0+1.2.203"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a7638ce84f8c84d6fd6faa63aa267574d345181ba591c0eeb5550d4c30cd600"
+
+[[package]]
 name = "ash-rtx-renderer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ash",
+ "ash 0.34.0+1.2.203",
  "ash-swapchain",
  "ash-window",
  "clap",
+ "gpu-allocator",
  "log",
  "once_cell",
  "ply-rs",
@@ -46,7 +68,7 @@ name = "ash-swapchain"
 version = "0.1.0"
 source = "git+https://github.com/Ralith/ash?branch=swapchain#971d4cfd646fb2b48122979f5f98c5a5eadf7825"
 dependencies = [
- "ash",
+ "ash 0.34.0+1.2.203",
 ]
 
 [[package]]
@@ -54,7 +76,7 @@ name = "ash-window"
 version = "0.8.0"
 source = "git+https://github.com/Ralith/ash?branch=swapchain#971d4cfd646fb2b48122979f5f98c5a5eadf7825"
 dependencies = [
- "ash",
+ "ash 0.34.0+1.2.203",
  "raw-window-handle 0.3.4",
  "raw-window-metal 0.1.2",
 ]
@@ -75,6 +97,21 @@ name = "autocfg"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
+
+[[package]]
+name = "backtrace"
+version = "0.3.63"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "321629d8ba6513061f26707241fa9bc89524ff1cd7a915a97ef0c62c666ce1b6"
+dependencies = [
+ "addr2line",
+ "cc",
+ "cfg-if 1.0.0",
+ "libc",
+ "miniz_oxide",
+ "object",
+ "rustc-demangle",
+]
 
 [[package]]
 name = "bitflags"
@@ -416,10 +453,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "gimli"
+version = "0.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78cc372d058dcf6d5ecd98510e7fbc9e5aec4d21de70f65fea8fecebcd881bd4"
+
+[[package]]
 name = "glob"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b919933a397b79c37e33b77bb2aa3dc8eb6e165ad809e58ff75bc7db2e34574"
+
+[[package]]
+name = "gpu-allocator"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4207902e06b4539698b767bd0749f7cabddfcb4944df475dcd9e35fcacc8f38e"
+dependencies = [
+ "ash 0.35.0+1.2.203",
+ "backtrace",
+ "log",
+ "thiserror",
+ "winapi",
+]
 
 [[package]]
 name = "hashbrown"
@@ -586,6 +642,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
+name = "miniz_oxide"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a92518e98c078586bc6c934028adcca4c92a53d6a958196de835170a01d84e4b"
+dependencies = [
+ "adler",
+ "autocfg",
+]
+
+[[package]]
 name = "mio"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -714,6 +780,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "915b1b472bc21c53464d6c8461c9d3af805ba1ef837e1cac254428f4a77177b1"
 dependencies = [
  "malloc_buf",
+]
+
+[[package]]
+name = "object"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67ac1d3f9a1d3616fd9a60c8d74296f22406a238b6a72f5cc1e6f314df4ffbf9"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -1018,6 +1093,12 @@ checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
 dependencies = [
  "winapi",
 ]
+
+[[package]]
+name = "rustc-demangle"
+version = "0.1.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ef03e0a2b150c7a90d01faf6254c9c48a41e95fb2a8c2ac1c6f0d2b9aefc342"
 
 [[package]]
 name = "ryu"

@@ -39,7 +39,7 @@ fn main() -> anyhow::Result<()> {
         .with_position(winit::dpi::PhysicalPosition::new(1300, 800))
         .build(&event_loop)
         .unwrap();
-    let _vulkan_app = VulkanApp::new(&window)?;
+    let mut vulkan_app = VulkanApp::new(&window)?;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -48,6 +48,7 @@ fn main() -> anyhow::Result<()> {
         match event {
             Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
                 WindowEvent::CloseRequested => exit(),
+                WindowEvent::Resized(size) => vulkan_app.resize(size).unwrap(),
                 WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
                     Some(winit::event::VirtualKeyCode::Escape) => exit(),
                     _ => (),
