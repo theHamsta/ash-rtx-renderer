@@ -26,7 +26,7 @@ fn main() -> anyhow::Result<()> {
     pretty_env_logger::try_init()?;
 
     let args = Args::parse();
-    let mesh = Mesh::from_file(&args.mesh_file)?;
+    let mesh = Mesh::from_file(&args.mesh_file, crate::mesh::ReadOptions::OnlyTriangles)?;
     info!(
         "Loaded mesh with {} triangles and {} vertices. vertex_normals: {}.",
         mesh.num_triangles(),

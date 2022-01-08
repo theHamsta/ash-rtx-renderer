@@ -21,7 +21,7 @@ struct Triangle {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum MeshError {
+pub enum MeshIOError {
     #[error("Unsupported mesh file type: {0}")]
     UnsupportedMeshFileType(String),
     #[error("Mesh file has no file extension")]
@@ -86,6 +86,12 @@ impl ply::PropertyAccess for Triangle {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum ReadOptions {
+    OnlyTriangles,
+    WithAttributes,
+}
+
 #[derive(Debug)]
 pub struct Mesh {
     vertices: Vec<Vertex>,
@@ -106,7 +112,7 @@ impl Mesh {
         self.vertex_normals.is_some()
     }
 
-    fn from_ply(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    fn from_ply(path: impl AsRef<Path>, options: ReadOptions) -> anyhow::Result<Self> {
         let f = std::fs::File::open(&path)?;
         let mut f = std::io::BufReader::new(f);
 
@@ -129,27 +135,29 @@ impl Mesh {
             }
         }
 
-        //TODO: not ideal: multiple passes to pass attributes. Could parse a big vertex structure
-        let vertex_normal_parser = ply_rs::parser::Parser::<VertexNormal>::new();
-        let f = std::fs::File::open(&path)?;
-        let mut f = std::io::BufReader::new(f);
-        let header = vertex_parser.read_header(&mut f).unwrap();
-
         let mut vertex_normals = Vec::new();
-        for (_ignore_key, element) in &header.elements {
-            match element.name.as_ref() {
-                "vertex" => {
-                    vertex_normals =
-                        vertex_normal_parser.read_payload_for_element(&mut f, &element, &header)?;
+        if options == ReadOptions::WithAttributes {
+            //TODO: not ideal: multiple passes to pass attributes. Could parse a big vertex structure
+            let vertex_normal_parser = ply_rs::parser::Parser::<VertexNormal>::new();
+            let f = std::fs::File::open(&path)?;
+            let mut f = std::io::BufReader::new(f);
+            let header = vertex_parser.read_header(&mut f).unwrap();
+
+            for (_ignore_key, element) in &header.elements {
+                match element.name.as_ref() {
+                    "vertex" => {
+                        vertex_normals = vertex_normal_parser
+                            .read_payload_for_element(&mut f, &element, &header)?;
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
 
         let vertex_normals = match (vertex_normals.len(), vertices.len()) {
             (0, _) => Ok(None),
             (a, b) if a == b => Ok(Some(vertex_normals)),
-            (a, b) => anyhow::Result::Err(MeshError::InvalidNumberOfVertexAttributes(a, b)),
+            (a, b) => anyhow::Result::Err(MeshIOError::InvalidNumberOfVertexAttributes(a, b)),
         }?;
 
         Ok(Mesh {
@@ -159,15 +167,15 @@ impl Mesh {
         })
     }
 
-    pub fn from_file(path: &impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub fn from_file(path: &impl AsRef<Path>, options: ReadOptions) -> anyhow::Result<Self> {
         let ext = path
             .as_ref()
             .extension()
-            .ok_or(MeshError::NoFileExtension)?
+            .ok_or(MeshIOError::NoFileExtension)?
             .to_string_lossy();
         match ext.borrow() {
-            "ply" | "PLY" => Mesh::from_ply(path),
-            ext => Err(MeshError::UnsupportedMeshFileType(ext.to_owned()).into()),
+            "ply" | "PLY" => Mesh::from_ply(path, options),
+            ext => Err(MeshIOError::UnsupportedMeshFileType(ext.to_owned()).into()),
         }
     }
 }
