@@ -48,7 +48,6 @@ dependencies = [
  "clap",
  "log",
  "meshopt",
- "once_cell",
  "ply-rs",
  "pretty_env_logger",
  "raw-window-handle 0.4.2",

@@ -18,7 +18,7 @@ mod vulkan_app;
 #[clap(author, version, about)]
 struct Args {
     /// Mesh file to render
-    #[clap(short, long, default_value("/home/stephan/projects/ply-rs/example_plys/house_2_ok_ascii.ply".into()))]
+    #[clap(short, long)]
     mesh_file: PathBuf,
 }
 
