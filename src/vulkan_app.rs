@@ -80,7 +80,7 @@ impl VulkanApp {
                 )
                 .unwrap();
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
-            let render_queue = device.get_device_queue(queue_family_index, queue_family_index);
+            let graphics_queue = device.get_device_queue(queue_family_index, queue_family_index);
             let mut options = ash_swapchain::Options::default();
             options.frames_in_flight(4);
 
@@ -136,7 +136,7 @@ impl VulkanApp {
                 surface,
                 swapchain,
                 frames,
-                graphics_queue: render_queue,
+                graphics_queue,
                 device,
                 physical_device,
                 command_pool,
