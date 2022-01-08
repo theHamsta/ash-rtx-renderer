@@ -1,3 +1,8 @@
+use log::info;
+use std::path::PathBuf;
+
+use clap::Parser;
+use mesh::Mesh;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -6,9 +11,28 @@ use winit::{
 
 use crate::vulkan_app::VulkanApp;
 
+mod mesh;
 mod vulkan_app;
 
+#[derive(clap::Parser)]
+#[clap(author, version, about)]
+struct Args {
+    /// Mesh file to render
+    #[clap(short, long)]
+    mesh_file: PathBuf,
+}
+
 fn main() -> anyhow::Result<()> {
+    pretty_env_logger::try_init()?;
+
+    let args = Args::parse();
+    let mesh = Mesh::from_file(&args.mesh_file)?;
+    info!(
+        "Loaded mesh with {} triangles and {} vertices.",
+        mesh.num_triangles(),
+        mesh.num_vertices()
+    );
+
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_position(winit::dpi::PhysicalPosition::new(1300, 800))
@@ -25,7 +49,6 @@ fn main() -> anyhow::Result<()> {
                 WindowEvent::CloseRequested => exit(),
                 WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
                     Some(winit::event::VirtualKeyCode::Escape) => exit(),
-
                     _ => (),
                 },
                 _ => (),
