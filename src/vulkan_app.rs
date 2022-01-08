@@ -214,7 +214,6 @@ impl VulkanApp {
 impl Drop for VulkanApp {
     fn drop(&mut self) {
         unsafe {
-            self.functions.surface.destroy_surface(self.surface, None);
             let _ = self.device.device_wait_idle();
             for frame in &self.frames {
                 self.device.destroy_semaphore(frame.complete, None);
