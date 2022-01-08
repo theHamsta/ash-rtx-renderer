@@ -7,13 +7,22 @@ struct Frame {
     complete: vk::Semaphore,
 }
 
+struct Functions {
+    surface: ash::extensions::khr::Surface,
+    swapchain: ash::extensions::khr::Swapchain,
+}
+
 pub struct VulkanApp {
     entry: ash::Entry,
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
+    physical_device: vk::PhysicalDevice,
+    device: ash::Device,
     swapchain: Swapchain,
     frames: Vec<Frame>,
-    render_queue: vk::Queue,
+    graphics_queue: vk::Queue,
+    functions: Functions,
+    command_pool: vk::CommandPool,
 }
 
 impl VulkanApp {
@@ -72,6 +81,8 @@ impl VulkanApp {
                 .unwrap();
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
             let render_queue = device.get_device_queue(queue_family_index, queue_family_index);
+            let mut options = ash_swapchain::Options::default();
+            options.frames_in_flight(4);
 
             let size = window.inner_size();
             let swapchain = Swapchain::new(
@@ -80,7 +91,7 @@ impl VulkanApp {
                     swapchain: &swapchain_fn,
                     surface: &surface_fn,
                 },
-                ash_swapchain::Options::default(),
+                options,
                 surface,
                 physical_device,
                 vk::Extent2D {
@@ -118,23 +129,105 @@ impl VulkanApp {
                 })
                 .collect();
 
+            let surface_fn = ash::extensions::khr::Surface::new(&entry, &instance);
             Ok(Self {
                 entry,
                 instance,
                 surface,
                 swapchain,
                 frames,
-                render_queue,
+                graphics_queue: render_queue,
+                device,
+                physical_device,
+                command_pool,
+                functions: Functions {
+                    surface: surface_fn,
+                    swapchain: swapchain_fn,
+                },
             })
         }
+    }
+
+    fn draw(&mut self, draw_fn: impl Fn(&vk::CommandBuffer)) -> anyhow::Result<()> {
+        let device = &self.device;
+        unsafe {
+            let acq = self.swapchain.acquire(
+                &ash_swapchain::Functions {
+                    device: &self.device,
+                    swapchain: &self.functions.swapchain,
+                    surface: &self.functions.surface,
+                },
+                !0,
+            )?;
+            let cmd = self.frames[acq.frame_index].cmd;
+            let swapchain_image = self.swapchain.images()[acq.image_index];
+            device.begin_command_buffer(
+                cmd,
+                &vk::CommandBufferBeginInfo::builder()
+                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+            )?;
+
+            device.cmd_clear_color_image(
+                cmd,
+                swapchain_image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &vk::ClearColorValue {
+                    float32: [0.0, 1.0, 0.0, 1.0],
+                },
+                &[vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                }],
+            );
+
+            draw_fn(&cmd);
+
+            device.end_command_buffer(cmd)?;
+            device.queue_submit(
+                self.graphics_queue,
+                &[vk::SubmitInfo::builder()
+                    .wait_semaphores(&[acq.ready])
+                    .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+                    .signal_semaphores(&[self.frames[acq.frame_index].complete])
+                    .command_buffers(&[cmd])
+                    .build()],
+                acq.complete,
+            )?;
+            self.swapchain.queue_present(
+                &ash_swapchain::Functions {
+                    device: &self.device,
+                    swapchain: &self.functions.swapchain,
+                    surface: &self.functions.surface,
+                },
+                self.graphics_queue,
+                self.frames[acq.frame_index].complete,
+                acq.image_index,
+            )?;
+        }
+        Ok(())
     }
 }
 
 impl Drop for VulkanApp {
     fn drop(&mut self) {
-        let surface_fn = ash::extensions::khr::Surface::new(&self.entry, &self.instance);
         unsafe {
-            surface_fn.destroy_surface(self.surface, None);
+            self.functions.surface.destroy_surface(self.surface, None);
+            let _ = self.device.device_wait_idle();
+            for frame in &self.frames {
+                self.device.destroy_semaphore(frame.complete, None);
+            }
+            self.device.destroy_command_pool(self.command_pool, None);
+            self.swapchain.destroy(&ash_swapchain::Functions {
+                device: &self.device,
+                swapchain: &self.functions.swapchain,
+                surface: &self.functions.surface,
+            });
+            self.functions.surface.destroy_surface(self.surface, None);
+            self.device.destroy_device(None);
+            self.instance.destroy_instance(None);
         }
     }
 }
