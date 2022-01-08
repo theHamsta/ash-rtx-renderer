@@ -2,11 +2,18 @@ use ash::{extensions::khr, vk};
 use ash_swapchain::Swapchain;
 use winit::window::Window;
 
+struct Frame {
+    cmd: vk::CommandBuffer,
+    complete: vk::Semaphore,
+}
+
 pub struct VulkanApp {
     entry: ash::Entry,
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
     swapchain: Swapchain,
+    frames: Vec<Frame>,
+    render_queue: vk::Queue,
 }
 
 impl VulkanApp {
@@ -64,7 +71,7 @@ impl VulkanApp {
                 )
                 .unwrap();
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
-            let queue = device.get_device_queue(queue_family_index, queue_family_index);
+            let render_queue = device.get_device_queue(queue_family_index, queue_family_index);
 
             let size = window.inner_size();
             let swapchain = Swapchain::new(
@@ -82,11 +89,42 @@ impl VulkanApp {
                 },
             );
 
+            let command_pool = device
+                .create_command_pool(
+                    &vk::CommandPoolCreateInfo::builder()
+                        .flags(
+                            vk::CommandPoolCreateFlags::TRANSIENT
+                                | vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
+                        )
+                        .queue_family_index(queue_family_index),
+                    None,
+                )
+                .unwrap();
+            let cmds = device
+                .allocate_command_buffers(
+                    &vk::CommandBufferAllocateInfo::builder()
+                        .command_pool(command_pool)
+                        .level(vk::CommandBufferLevel::PRIMARY)
+                        .command_buffer_count(swapchain.frames_in_flight() as u32),
+                )
+                .unwrap();
+            let frames = cmds
+                .into_iter()
+                .map(|cmd| Frame {
+                    cmd,
+                    complete: device
+                        .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
+                        .unwrap(),
+                })
+                .collect();
+
             Ok(Self {
                 entry,
                 instance,
                 surface,
                 swapchain,
+                frames,
+                render_queue,
             })
         }
     }
