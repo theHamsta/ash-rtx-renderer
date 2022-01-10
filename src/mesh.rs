@@ -1,28 +1,34 @@
 use ply_rs::ply;
-use std::{borrow::Borrow, path::Path};
+use std::{os::unix::prelude::OsStrExt, path::Path};
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Copy)]
+struct Position {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct Normal {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
 struct Vertex {
-    x: f32,
-    y: f32,
-    z: f32,
+    pos: Position,
+    normal: Option<Normal>,
 }
 
-#[derive(Debug)]
-struct VertexNormal {
-    x: f32,
-    y: f32,
-    z: f32,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Triangle {
     indices: [i32; 3],
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum MeshIOError {
-    #[error("Unsupported mesh file type: {0}")]
+    #[error("Unsupported mesh file type: {0:?}")]
     UnsupportedMeshFileType(String),
     #[error("Mesh file has no file extension")]
     NoFileExtension,
@@ -30,13 +36,9 @@ pub enum MeshIOError {
     InvalidNumberOfVertexAttributes(usize, usize),
 }
 
-impl ply::PropertyAccess for Vertex {
+impl ply::PropertyAccess for Position {
     fn new() -> Self {
-        Vertex {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        }
+        Self::default()
     }
     fn set_property(&mut self, key: String, property: ply::Property) {
         match (key.as_ref(), property) {
@@ -48,19 +50,18 @@ impl ply::PropertyAccess for Vertex {
     }
 }
 
-impl ply::PropertyAccess for VertexNormal {
+impl ply::PropertyAccess for Vertex {
     fn new() -> Self {
-        Self {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        }
+        Vertex::default()
     }
     fn set_property(&mut self, key: String, property: ply::Property) {
         match (key.as_ref(), property) {
-            ("nx", ply::Property::Float(v)) => self.x = v,
-            ("ny", ply::Property::Float(v)) => self.y = v,
-            ("nz", ply::Property::Float(v)) => self.z = v,
+            ("x", ply::Property::Float(v)) => self.pos.x = v,
+            ("y", ply::Property::Float(v)) => self.pos.y = v,
+            ("z", ply::Property::Float(v)) => self.pos.z = v,
+            ("nx", ply::Property::Float(v)) => self.normal.get_or_insert(Default::default()).x = v,
+            ("ny", ply::Property::Float(v)) => self.normal.get_or_insert(Default::default()).y = v,
+            ("nz", ply::Property::Float(v)) => self.normal.get_or_insert(Default::default()).z = v,
             _ => (),
         }
     }
@@ -94,9 +95,9 @@ pub enum ReadOptions {
 
 #[derive(Debug)]
 pub struct Mesh {
-    vertices: Vec<Vertex>,
+    positions: Vec<Position>,
     triangles: Vec<Triangle>,
-    vertex_normals: Option<Vec<VertexNormal>>,
+    vertex_normals: Option<Vec<Normal>>,
 }
 
 impl Mesh {
@@ -105,7 +106,7 @@ impl Mesh {
     }
 
     pub fn num_vertices(&self) -> usize {
-        self.vertices.len()
+        self.positions.len()
     }
 
     pub fn has_vertex_normals(&self) -> bool {
@@ -116,66 +117,86 @@ impl Mesh {
         let f = std::fs::File::open(&path)?;
         let mut f = std::io::BufReader::new(f);
 
-        let vertex_parser = ply_rs::parser::Parser::<Vertex>::new();
         let face_parser = ply_rs::parser::Parser::<Triangle>::new();
+        match options {
+            ReadOptions::OnlyTriangles => {
+                let vertex_parser = ply_rs::parser::Parser::<Position>::new();
 
-        let header = vertex_parser.read_header(&mut f).unwrap();
+                let header = vertex_parser.read_header(&mut f).unwrap();
 
-        let mut vertices = Vec::new();
-        let mut triangles = Vec::new();
-        for (_ignore_key, element) in &header.elements {
-            match element.name.as_ref() {
-                "vertex" => {
-                    vertices = vertex_parser.read_payload_for_element(&mut f, &element, &header)?;
-                }
-                "face" => {
-                    triangles = face_parser.read_payload_for_element(&mut f, &element, &header)?;
-                }
-                _ => (),
-            }
-        }
-
-        let mut vertex_normals = Vec::new();
-        if options == ReadOptions::WithAttributes {
-            //TODO: not ideal: multiple passes to pass attributes. Could parse a big vertex structure
-            let vertex_normal_parser = ply_rs::parser::Parser::<VertexNormal>::new();
-            let f = std::fs::File::open(&path)?;
-            let mut f = std::io::BufReader::new(f);
-            let header = vertex_parser.read_header(&mut f).unwrap();
-
-            for (_ignore_key, element) in &header.elements {
-                match element.name.as_ref() {
-                    "vertex" => {
-                        vertex_normals = vertex_normal_parser
-                            .read_payload_for_element(&mut f, &element, &header)?;
+                let mut positions = Vec::new();
+                let mut triangles = Vec::new();
+                for (_ignore_key, element) in &header.elements {
+                    match element.name.as_ref() {
+                        "vertex" => {
+                            positions = vertex_parser
+                                .read_payload_for_element(&mut f, &element, &header)?;
+                        }
+                        "face" => {
+                            triangles =
+                                face_parser.read_payload_for_element(&mut f, &element, &header)?;
+                        }
+                        _ => (),
                     }
-                    _ => (),
                 }
+                return Ok(Mesh {
+                    positions,
+                    triangles,
+                    vertex_normals: None,
+                });
+            }
+            ReadOptions::WithAttributes => {
+                let vertex_parser = ply_rs::parser::Parser::<Vertex>::new();
+                let f = std::fs::File::open(&path)?;
+                let mut f = std::io::BufReader::new(f);
+                let header = vertex_parser.read_header(&mut f).unwrap();
+                let mut vertices = Vec::new();
+                let mut triangles = Vec::new();
+
+                for (_ignore_key, element) in &header.elements {
+                    match element.name.as_ref() {
+                        "vertex" => {
+                            vertices = vertex_parser
+                                .read_payload_for_element(&mut f, &element, &header)?;
+                        }
+                        "face" => {
+                            triangles =
+                                face_parser.read_payload_for_element(&mut f, &element, &header)?;
+                        }
+                        _ => (),
+                    }
+                }
+                let positions: Vec<_> = vertices.iter().map(|v| v.pos).collect();
+                let vertex_normals: Vec<_> = vertices.iter().flat_map(|v| v.normal).collect();
+
+                let vertex_normals = match (vertex_normals.len(), positions.len()) {
+                    (0, _) => Ok(None),
+                    (a, b) if a == b => Ok(Some(vertex_normals)),
+                    (a, b) => {
+                        anyhow::Result::Err(MeshIOError::InvalidNumberOfVertexAttributes(a, b))
+                    }
+                }?;
+
+                Ok(Mesh {
+                    positions,
+                    triangles,
+                    vertex_normals,
+                })
             }
         }
-
-        let vertex_normals = match (vertex_normals.len(), vertices.len()) {
-            (0, _) => Ok(None),
-            (a, b) if a == b => Ok(Some(vertex_normals)),
-            (a, b) => anyhow::Result::Err(MeshIOError::InvalidNumberOfVertexAttributes(a, b)),
-        }?;
-
-        Ok(Mesh {
-            vertices,
-            triangles,
-            vertex_normals,
-        })
     }
 
     pub fn from_file(path: &impl AsRef<Path>, options: ReadOptions) -> anyhow::Result<Self> {
         let ext = path
             .as_ref()
             .extension()
-            .ok_or(MeshIOError::NoFileExtension)?
-            .to_string_lossy();
-        match ext.borrow() {
-            "ply" | "PLY" => Mesh::from_ply(path, options),
-            ext => Err(MeshIOError::UnsupportedMeshFileType(ext.to_owned()).into()),
+            .ok_or(MeshIOError::NoFileExtension)?;
+        match ext.as_bytes() {
+            b"ply" | b"PLY" => Mesh::from_ply(path, options),
+            ext => Err(MeshIOError::UnsupportedMeshFileType(
+                String::from_utf8_lossy(&ext).to_string(),
+            )
+            .into()),
         }
     }
 }

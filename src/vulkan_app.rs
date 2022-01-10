@@ -63,8 +63,8 @@ impl VulkanApp {
                 .into_iter()
                 .find_map(|dev| {
                     let mut props = vk::PhysicalDeviceProperties2KHR::default();
-                    GetPhysicalDeviceProperties2::new(&entry, &instance)
-                        .get_physical_device_properties2(dev, &mut props);
+                    instance.get_physical_device_properties2(dev, &mut props);
+
                     info!(
                         "{:?}",
                         ::std::ffi::CStr::from_ptr(
