@@ -1,9 +1,6 @@
 use std::os::raw::c_char;
 
-use ash::{
-    extensions::khr::{self, GetPhysicalDeviceProperties2},
-    vk,
-};
+use ash::{extensions::khr, vk};
 use ash_swapchain::Swapchain;
 use log::{error, info};
 use winit::{dpi::PhysicalSize, window::Window};
