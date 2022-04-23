@@ -10,7 +10,7 @@ use winit::{
 };
 
 use crate::{
-    draw_impls::{DrawImpl, Drawer, TriangleDrawer},
+    draw_impls::{DrawImpl, Drawer, ColorSine},
     vulkan_app::VulkanApp,
 };
 
@@ -45,7 +45,7 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
     let mut vulkan_app = VulkanApp::new(&window)?;
 
-    let drawers = vec![DrawImpl::Triangle(TriangleDrawer::new())];
+    let drawers = vec![DrawImpl::Triangle(ColorSine::new())];
     let mut active_drawer_idx = 0;
 
     event_loop.run(move |event, _, control_flow| {
@@ -71,14 +71,15 @@ fn main() -> anyhow::Result<()> {
                 },
                 _ => (),
             },
+            Event::MainEventsCleared => {
+                if let Err(err) = vulkan_app.draw(|device, cmd, image, instant| {
+                    drawers[active_drawer_idx].draw(device, cmd, image, instant);
+                }) {
+                    error!("{err}");
+                    exit();
+                }
+            }
             _ => (),
         }
-
-        if let Err(err) = vulkan_app.draw(|device, cmd, image| {
-            drawers[active_drawer_idx].draw(device, cmd, image);
-        }) {
-            error!("{err}");
-            exit();
-        };
     });
 }

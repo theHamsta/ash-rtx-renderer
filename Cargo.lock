@@ -20,7 +20,7 @@ checksum = "08f9b8508dccb7687a1d6c4ce66b2b0ecef467c94667de27d8d7fe1f8d2a9cdc"
 [[package]]
 name = "ash"
 version = "0.37.0+1.3.211"
-source = "git+https://github.com/theHamsta/ash?branch=swapchain#6265b77bbf8b9dabbca0420b14d3f4c27c5ed2f8"
+source = "git+https://github.com/theHamsta/ash?branch=swapchain#79a13089279775bd7577a83453a8129b64f61a65"
 dependencies = [
  "libloading",
 ]
@@ -47,7 +47,7 @@ dependencies = [
 [[package]]
 name = "ash-swapchain"
 version = "0.1.0"
-source = "git+https://github.com/theHamsta/ash?branch=swapchain#6265b77bbf8b9dabbca0420b14d3f4c27c5ed2f8"
+source = "git+https://github.com/theHamsta/ash?branch=swapchain#79a13089279775bd7577a83453a8129b64f61a65"
 dependencies = [
  "ash",
 ]
@@ -55,7 +55,7 @@ dependencies = [
 [[package]]
 name = "ash-window"
 version = "0.10.0"
-source = "git+https://github.com/theHamsta/ash?branch=swapchain#6265b77bbf8b9dabbca0420b14d3f4c27c5ed2f8"
+source = "git+https://github.com/theHamsta/ash?branch=swapchain#79a13089279775bd7577a83453a8129b64f61a65"
 dependencies = [
  "ash",
  "raw-window-handle 0.3.4",

@@ -1,4 +1,5 @@
 use std::os::raw::c_char;
+use std::time::Instant;
 
 use ash::{extensions::khr, vk};
 use ash_swapchain::Swapchain;
@@ -27,6 +28,7 @@ pub struct VulkanApp {
     _entry: ash::Entry,
     //_physical_device: vk::PhysicalDevice,
     _graphics_queue: vk::Queue,
+    start_instant: Instant,
     device: ash::Device,
     swapchain: Swapchain,
     frames: Vec<Frame>,
@@ -38,18 +40,15 @@ impl VulkanApp {
     pub fn new(window: &Window) -> anyhow::Result<Self> {
         unsafe {
             let surface_extensions = ash_window::enumerate_required_extensions(window)?;
-            let mut instance_extensions = surface_extensions
-                .iter()
-                .map(|ext| ext.as_ptr())
-                .collect::<Vec<_>>();
+            let mut instance_extensions = surface_extensions.iter().copied().collect::<Vec<_>>();
             instance_extensions.push(khr::GetPhysicalDeviceProperties2::name().as_ptr());
             let app_desc =
-                vk::ApplicationInfo::builder().api_version(vk::make_api_version(0, 1, 0, 0));
-            let instance_desc = vk::InstanceCreateInfo::builder()
+                vk::ApplicationInfo::default().api_version(vk::make_api_version(0, 1, 0, 0));
+            let instance_desc = vk::InstanceCreateInfo::default()
                 .application_info(&app_desc)
                 .enabled_extension_names(&instance_extensions);
 
-            let entry = ash::Entry::new();
+            let entry = ash::Entry::load()?;
             let instance = entry.create_instance(&instance_desc, None)?;
             let surface = ash_window::create_surface(&entry, &instance, window, None)?;
             let surface_fn = khr::Surface::new(&entry, &instance);
@@ -105,20 +104,18 @@ impl VulkanApp {
             let device = instance
                 .create_device(
                     physical_device,
-                    &vk::DeviceCreateInfo::builder()
+                    &vk::DeviceCreateInfo::default()
                         .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
-                        .queue_create_infos(&[vk::DeviceQueueCreateInfo::builder()
+                        .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
                             .queue_family_index(queue_family_index)
                             .queue_priorities(&[1.0])
-                            .build()]),
+                            ]),
                     None,
                 )
-                .unwrap();
-            let swapchain_fn = khr::Swapchain::new(&instance, &device);
+                .unwrap(); let swapchain_fn= khr::Swapchain::new(&instance, &device);
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let mut swapchain_options = ash_swapchain::Options::default();
             swapchain_options.frames_in_flight(4);
-
             let size = window.inner_size();
             let swapchain = Swapchain::new(
                 &ash_swapchain::Functions {
@@ -137,7 +134,7 @@ impl VulkanApp {
 
             let command_pool = device
                 .create_command_pool(
-                    &vk::CommandPoolCreateInfo::builder()
+                    &vk::CommandPoolCreateInfo::default()
                         .flags(
                             vk::CommandPoolCreateFlags::TRANSIENT
                                 | vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
@@ -148,7 +145,7 @@ impl VulkanApp {
                 .unwrap();
             let cmds = device
                 .allocate_command_buffers(
-                    &vk::CommandBufferAllocateInfo::builder()
+                    &vk::CommandBufferAllocateInfo::default()
                         .command_pool(command_pool)
                         .level(vk::CommandBufferLevel::PRIMARY)
                         .command_buffer_count(swapchain.frames_in_flight() as u32),
@@ -171,6 +168,7 @@ impl VulkanApp {
                 surface,
                 swapchain,
                 frames,
+                start_instant: Instant::now(),
                 _graphics_queue: graphics_queue,
                 device,
                 command_pool,
@@ -192,7 +190,7 @@ impl VulkanApp {
 
     pub fn draw(
         &mut self,
-        draw_fn: impl Fn(&ash::Device, &vk::CommandBuffer, &vk::Image),
+        draw_fn: impl Fn(&ash::Device, &vk::CommandBuffer, &vk::Image, Instant),
     ) -> anyhow::Result<()> {
         let device = &self.device;
         unsafe {
@@ -208,7 +206,7 @@ impl VulkanApp {
             let swapchain_image = self.swapchain.images()[acq.image_index];
             device.begin_command_buffer(
                 cmd,
-                &vk::CommandBufferBeginInfo::builder()
+                &vk::CommandBufferBeginInfo::default()
                     .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
             )?;
 
@@ -228,17 +226,16 @@ impl VulkanApp {
                 }],
             );
 
-            draw_fn(&self.device, &cmd, &swapchain_image);
+            draw_fn(&self.device, &cmd, &swapchain_image, self.start_instant);
 
             device.end_command_buffer(cmd)?;
             device.queue_submit(
                 self._graphics_queue,
-                &[vk::SubmitInfo::builder()
+                &[vk::SubmitInfo::default()
                     .wait_semaphores(&[acq.ready])
                     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
                     .signal_semaphores(&[self.frames[acq.frame_index].complete])
-                    .command_buffers(&[cmd])
-                    .build()],
+                    .command_buffers(&[cmd])],
                 acq.complete,
             )?;
             self.swapchain.queue_present(
@@ -252,7 +249,7 @@ impl VulkanApp {
                 acq.image_index,
             )?;
         }
-        Ok(())
+            Ok(())
     }
 }
 
