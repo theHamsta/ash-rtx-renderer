@@ -129,21 +129,21 @@ impl Mesh {
                 for (_ignore_key, element) in &header.elements {
                     match element.name.as_ref() {
                         "vertex" => {
-                            positions = vertex_parser
-                                .read_payload_for_element(&mut f, &element, &header)?;
+                            positions =
+                                vertex_parser.read_payload_for_element(&mut f, element, &header)?;
                         }
                         "face" => {
                             triangles =
-                                face_parser.read_payload_for_element(&mut f, &element, &header)?;
+                                face_parser.read_payload_for_element(&mut f, element, &header)?;
                         }
                         _ => (),
                     }
                 }
-                return Ok(Mesh {
+                Ok(Mesh {
                     positions,
                     triangles,
                     vertex_normals: None,
-                });
+                })
             }
             ReadOptions::WithAttributes => {
                 let vertex_parser = ply_rs::parser::Parser::<Vertex>::new();
@@ -156,12 +156,12 @@ impl Mesh {
                 for (_ignore_key, element) in &header.elements {
                     match element.name.as_ref() {
                         "vertex" => {
-                            vertices = vertex_parser
-                                .read_payload_for_element(&mut f, &element, &header)?;
+                            vertices =
+                                vertex_parser.read_payload_for_element(&mut f, element, &header)?;
                         }
                         "face" => {
                             triangles =
-                                face_parser.read_payload_for_element(&mut f, &element, &header)?;
+                                face_parser.read_payload_for_element(&mut f, element, &header)?;
                         }
                         _ => (),
                     }
@@ -194,7 +194,7 @@ impl Mesh {
         match ext.as_bytes() {
             b"ply" | b"PLY" => Mesh::from_ply(path, options),
             ext => Err(MeshIOError::UnsupportedMeshFileType(
-                String::from_utf8_lossy(&ext).to_string(),
+                String::from_utf8_lossy(ext).to_string(),
             )
             .into()),
         }
