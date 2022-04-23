@@ -14,7 +14,7 @@ use crate::{
     vulkan_app::VulkanApp,
 };
 
-mod draw_impls;
+mod renderers;
 mod mesh;
 mod vulkan_app;
 

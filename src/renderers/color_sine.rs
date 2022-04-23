@@ -1,25 +1,9 @@
 use std::time::Instant;
 
 use ash::vk;
-use enum_dispatch::enum_dispatch;
 use log::trace;
 
-#[enum_dispatch]
-pub trait Drawer {
-    fn draw(
-        &self,
-        device: &ash::Device,
-        cmd: vk::CommandBuffer,
-        image: vk::Image,
-        start_instant: Instant,
-    ) -> anyhow::Result<()>;
-}
-
-#[enum_dispatch(Drawer)]
-#[derive(Debug)]
-pub enum DrawImpl {
-    Triangle(ColorSine),
-}
+use super::Renderer;
 
 #[derive(Debug)]
 pub struct ColorSine {}
@@ -30,7 +14,7 @@ impl ColorSine {
     }
 }
 
-impl Drawer for ColorSine {
+impl Renderer for ColorSine {
     fn draw(
         &self,
         device: &ash::Device,
@@ -108,4 +92,6 @@ impl Drawer for ColorSine {
         }
         Ok(())
     }
+
+    fn set_mesh(&mut self, _mesh: std::rc::Rc<crate::mesh::Mesh>) {}
 }
