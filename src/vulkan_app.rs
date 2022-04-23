@@ -190,7 +190,7 @@ impl VulkanApp {
         Ok(())
     }
 
-    fn draw(
+    pub fn draw(
         &mut self,
         draw_fn: impl Fn(&ash::Device, &vk::CommandBuffer, &vk::Image),
     ) -> anyhow::Result<()> {

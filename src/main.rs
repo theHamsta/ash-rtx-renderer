@@ -1,4 +1,4 @@
-use log::info;
+use log::{error, info};
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -9,8 +9,12 @@ use winit::{
     window::WindowBuilder,
 };
 
-use crate::vulkan_app::VulkanApp;
+use crate::{
+    draw_impls::{DrawImpl, Drawer, TriangleDrawer},
+    vulkan_app::VulkanApp,
+};
 
+mod draw_impls;
 mod mesh;
 mod vulkan_app;
 
@@ -41,6 +45,9 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
     let mut vulkan_app = VulkanApp::new(&window)?;
 
+    let drawers = vec![DrawImpl::Triangle(TriangleDrawer::new())];
+    let mut active_drawer_idx = 0;
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         let mut exit = || *control_flow = ControlFlow::Exit;
@@ -51,11 +58,27 @@ fn main() -> anyhow::Result<()> {
                 WindowEvent::Resized(size) => vulkan_app.resize(size).unwrap(),
                 WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
                     Some(winit::event::VirtualKeyCode::Escape) => exit(),
+                    Some(
+                        winit::event::VirtualKeyCode::Numpad1 | winit::event::VirtualKeyCode::Key1,
+                    ) => {
+                        active_drawer_idx = 0;
+                        info!(
+                            "Switched Drawer to {active_drawer_idx}: {:?}",
+                            drawers[active_drawer_idx]
+                        );
+                    }
                     _ => (),
                 },
                 _ => (),
             },
             _ => (),
         }
+
+        if let Err(err) = vulkan_app.draw(|device, cmd, image| {
+            drawers[active_drawer_idx].draw(device, cmd, image);
+        }) {
+            error!("{err}");
+            exit();
+        };
     });
 }
