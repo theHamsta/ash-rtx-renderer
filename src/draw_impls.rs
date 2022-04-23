@@ -9,10 +9,10 @@ pub trait Drawer {
     fn draw(
         &self,
         device: &ash::Device,
-        cmd: &vk::CommandBuffer,
-        image: &vk::Image,
+        cmd: vk::CommandBuffer,
+        image: vk::Image,
         start_instant: Instant,
-    );
+    ) -> anyhow::Result<()>;
 }
 
 #[enum_dispatch(Drawer)]
@@ -34,15 +34,15 @@ impl Drawer for ColorSine {
     fn draw(
         &self,
         device: &ash::Device,
-        cmd: &vk::CommandBuffer,
-        image: &vk::Image,
+        cmd: vk::CommandBuffer,
+        image: vk::Image,
         start_instant: Instant,
-    ) {
+    ) -> anyhow::Result<()> {
         trace!("draw for {self:?}");
 
         unsafe {
             device.cmd_pipeline_barrier(
-                *cmd,
+                cmd,
                 vk::PipelineStageFlags::TRANSFER,
                 vk::PipelineStageFlags::TRANSFER,
                 vk::DependencyFlags::default(),
@@ -54,7 +54,7 @@ impl Drawer for ColorSine {
                     .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                     .old_layout(vk::ImageLayout::UNDEFINED)
                     .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .image(*image)
+                    .image(image)
                     .subresource_range(vk::ImageSubresourceRange {
                         aspect_mask: vk::ImageAspectFlags::COLOR,
                         base_mip_level: 0,
@@ -63,10 +63,12 @@ impl Drawer for ColorSine {
                         layer_count: 1,
                     })],
             );
+
             let t = (start_instant.elapsed().as_secs_f32().sin() + 1.0) * 0.5;
+
             device.cmd_clear_color_image(
-                *cmd,
-                *image,
+                cmd,
+                image,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 &vk::ClearColorValue {
                     float32: [0.0, t, 0.0, 1.0],
@@ -82,7 +84,7 @@ impl Drawer for ColorSine {
             // Typically this barrier would be implemented with the implicit subpass dependency to
             // EXTERNAL
             device.cmd_pipeline_barrier(
-                *cmd,
+                cmd,
                 vk::PipelineStageFlags::TRANSFER,
                 vk::PipelineStageFlags::BOTTOM_OF_PIPE,
                 vk::DependencyFlags::default(),
@@ -94,7 +96,7 @@ impl Drawer for ColorSine {
                     .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                     .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                     .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                    .image(*image)
+                    .image(image)
                     .subresource_range(vk::ImageSubresourceRange {
                         aspect_mask: vk::ImageAspectFlags::COLOR,
                         base_mip_level: 0,
@@ -104,5 +106,6 @@ impl Drawer for ColorSine {
                     })],
             );
         }
+        Ok(())
     }
 }

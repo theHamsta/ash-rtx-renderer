@@ -49,7 +49,7 @@ fn main() -> anyhow::Result<()> {
     let mut active_drawer_idx = 0;
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        *control_flow = ControlFlow::Poll;
         let mut exit = || *control_flow = ControlFlow::Exit;
 
         match event {
@@ -73,9 +73,9 @@ fn main() -> anyhow::Result<()> {
             },
             Event::MainEventsCleared => {
                 if let Err(err) = vulkan_app.draw(|device, cmd, image, instant| {
-                    drawers[active_drawer_idx].draw(device, cmd, image, instant);
+                    drawers[active_drawer_idx].draw(device, cmd, image, instant)
                 }) {
-                    error!("{err}");
+                    error!("{err:?}");
                     exit();
                 }
             }
