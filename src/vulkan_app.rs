@@ -12,7 +12,7 @@ pub enum VulkanError {
 }
 
 struct Frame {
-    cmd: vk::CommandBuffer,
+    _cmd: vk::CommandBuffer,
     complete: vk::Semaphore,
 }
 
@@ -24,9 +24,9 @@ struct Functions {
 pub struct VulkanApp {
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
-    //_entry: ash::Entry,
+    _entry: ash::Entry,
     //_physical_device: vk::PhysicalDevice,
-    graphics_queue: vk::Queue,
+    _graphics_queue: vk::Queue,
     device: ash::Device,
     swapchain: Swapchain,
     frames: Vec<Frame>,
@@ -157,7 +157,7 @@ impl VulkanApp {
             let frames = cmds
                 .into_iter()
                 .map(|cmd| Frame {
-                    cmd,
+                    _cmd: cmd,
                     complete: device
                         .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
                         .unwrap(),
@@ -166,11 +166,12 @@ impl VulkanApp {
 
             let surface_fn = ash::extensions::khr::Surface::new(&entry, &instance);
             Ok(Self {
+                _entry: entry,
                 instance,
                 surface,
                 swapchain,
                 frames,
-                graphics_queue,
+                _graphics_queue: graphics_queue,
                 device,
                 command_pool,
                 functions: Functions {
@@ -189,7 +190,10 @@ impl VulkanApp {
         Ok(())
     }
 
-    fn draw(&mut self, draw_fn: impl Fn(&vk::CommandBuffer)) -> anyhow::Result<()> {
+    fn draw(
+        &mut self,
+        draw_fn: impl Fn(&ash::Device, &vk::CommandBuffer, &vk::Image),
+    ) -> anyhow::Result<()> {
         let device = &self.device;
         unsafe {
             let acq = self.swapchain.acquire(
@@ -200,7 +204,7 @@ impl VulkanApp {
                 },
                 !0,
             )?;
-            let cmd = self.frames[acq.frame_index].cmd;
+            let cmd = self.frames[acq.frame_index]._cmd;
             let swapchain_image = self.swapchain.images()[acq.image_index];
             device.begin_command_buffer(
                 cmd,
@@ -224,11 +228,11 @@ impl VulkanApp {
                 }],
             );
 
-            draw_fn(&cmd);
+            draw_fn(&self.device, &cmd, &swapchain_image);
 
             device.end_command_buffer(cmd)?;
             device.queue_submit(
-                self.graphics_queue,
+                self._graphics_queue,
                 &[vk::SubmitInfo::builder()
                     .wait_semaphores(&[acq.ready])
                     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
@@ -243,7 +247,7 @@ impl VulkanApp {
                     swapchain: &self.functions.swapchain,
                     surface: &self.functions.surface,
                 },
-                self.graphics_queue,
+                self._graphics_queue,
                 self.frames[acq.frame_index].complete,
                 acq.image_index,
             )?;
