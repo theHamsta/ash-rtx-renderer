@@ -11,7 +11,7 @@ use winit::{
 };
 
 use crate::{
-    renderers::{color_sine::ColorSine, Renderer, RendererImpl},
+    renderers::{color_sine::ColorSine, ortho::Orthographic, Renderer, RendererImpl},
     vulkan_app::VulkanApp,
 };
 
@@ -46,7 +46,10 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
     let mut vulkan_app = VulkanApp::new(&window)?;
 
-    let mut renderers = vec![RendererImpl::ColorSine(ColorSine::default())];
+    let mut renderers = vec![
+        RendererImpl::ColorSine(ColorSine::default()),
+        RendererImpl::Orthographic(Orthographic::default()),
+    ];
     let mut active_drawer_idx = 0;
 
     event_loop.run(move |event, _, control_flow| {
@@ -76,6 +79,15 @@ fn main() -> anyhow::Result<()> {
                         winit::event::VirtualKeyCode::Numpad1 | winit::event::VirtualKeyCode::Key1,
                     ) => {
                         active_drawer_idx = 0;
+                        info!(
+                            "Switched Drawer to {active_drawer_idx}: {:?}",
+                            renderers[active_drawer_idx]
+                        );
+                    }
+                    Some(
+                        winit::event::VirtualKeyCode::Numpad2 | winit::event::VirtualKeyCode::Key2,
+                    ) => {
+                        active_drawer_idx = 1;
                         info!(
                             "Switched Drawer to {active_drawer_idx}: {:?}",
                             renderers[active_drawer_idx]
