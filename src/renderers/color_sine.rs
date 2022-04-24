@@ -5,14 +5,8 @@ use log::trace;
 
 use super::Renderer;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ColorSine {}
-
-impl ColorSine {
-    pub fn new() -> Self {
-        ColorSine {}
-    }
-}
 
 impl Renderer for ColorSine {
     fn draw(
@@ -92,6 +86,4 @@ impl Renderer for ColorSine {
         }
         Ok(())
     }
-
-    fn set_mesh(&mut self, _mesh: std::rc::Rc<crate::mesh::Mesh>) {}
 }

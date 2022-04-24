@@ -1,3 +1,4 @@
+use ash::vk;
 use log::{error, info};
 use std::path::PathBuf;
 
@@ -10,12 +11,12 @@ use winit::{
 };
 
 use crate::{
-    draw_impls::{DrawImpl, Drawer, ColorSine},
+    renderers::{color_sine::ColorSine, Renderer, RendererImpl},
     vulkan_app::VulkanApp,
 };
 
-mod renderers;
 mod mesh;
+mod renderers;
 mod vulkan_app;
 
 #[derive(clap::Parser)]
@@ -45,7 +46,7 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
     let mut vulkan_app = VulkanApp::new(&window)?;
 
-    let drawers = vec![DrawImpl::Triangle(ColorSine::new())];
+    let mut renderers = vec![RendererImpl::ColorSine(ColorSine::default())];
     let mut active_drawer_idx = 0;
 
     event_loop.run(move |event, _, control_flow| {
@@ -55,7 +56,20 @@ fn main() -> anyhow::Result<()> {
         match event {
             Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
                 WindowEvent::CloseRequested => exit(),
-                WindowEvent::Resized(size) => vulkan_app.resize(size).unwrap(),
+                WindowEvent::Resized(size) => {
+                    vulkan_app.resize(size);
+                    for r in renderers.iter_mut() {
+                        r.set_resolution(
+                            vulkan_app.device(),
+                            vulkan_app.surface_format(),
+                            vk::Extent2D {
+                                width: size.width,
+                                height: size.height,
+                            },
+                            vulkan_app.images(),
+                        );
+                    }
+                }
                 WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
                     Some(winit::event::VirtualKeyCode::Escape) => exit(),
                     Some(
@@ -64,7 +78,7 @@ fn main() -> anyhow::Result<()> {
                         active_drawer_idx = 0;
                         info!(
                             "Switched Drawer to {active_drawer_idx}: {:?}",
-                            drawers[active_drawer_idx]
+                            renderers[active_drawer_idx]
                         );
                     }
                     _ => (),
@@ -72,9 +86,11 @@ fn main() -> anyhow::Result<()> {
                 _ => (),
             },
             Event::MainEventsCleared => {
-                if let Err(err) = vulkan_app.draw(|device, cmd, image, instant| {
-                    drawers[active_drawer_idx].draw(device, cmd, image, instant)
-                }) {
+                if let Err(err) =
+                    vulkan_app.draw(|device, cmd, image, instant| -> Result<(), anyhow::Error> {
+                        renderers[active_drawer_idx].draw(device, cmd, image, instant)
+                    })
+                {
                     error!("{err:?}");
                     exit();
                 }

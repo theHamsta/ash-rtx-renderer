@@ -2,7 +2,7 @@ use std::os::raw::c_char;
 use std::time::Instant;
 
 use anyhow::Context;
-use ash::{extensions::khr, vk};
+use ash::{extensions::khr, vk::{self, SurfaceFormatKHR}};
 use ash_swapchain::Swapchain;
 use log::{error, info};
 use winit::{dpi::PhysicalSize, window::Window};
@@ -11,6 +11,8 @@ use winit::{dpi::PhysicalSize, window::Window};
 pub enum VulkanError {
     #[error("Found no device with surface support")]
     NoDeviceForSurfaceFound,
+    #[error("Found no format for current surface")]
+    NoSurfaceFormat,
 }
 
 struct Frame {
@@ -27,8 +29,9 @@ pub struct VulkanApp {
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
     _entry: ash::Entry,
-    //_physical_device: vk::PhysicalDevice,
+    physical_device: vk::PhysicalDevice,
     graphics_queue: vk::Queue,
+    surface_format: vk::SurfaceFormatKHR,
     start_instant: Instant,
     device: ash::Device,
     swapchain: Swapchain,
@@ -105,17 +108,15 @@ impl VulkanApp {
                 })
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
 
-            let device = instance
-                .create_device(
-                    physical_device,
-                    &vk::DeviceCreateInfo::default()
-                        .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
-                        .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
-                            .queue_family_index(queue_family_index)
-                            .queue_priorities(&[1.0])]),
-                    None,
-                )
-                .unwrap();
+            let device = instance.create_device(
+                physical_device,
+                &vk::DeviceCreateInfo::default()
+                    .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
+                    .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
+                        .queue_family_index(queue_family_index)
+                        .queue_priorities(&[1.0])]),
+                None,
+            )?;
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let mut swapchain_options = ash_swapchain::Options::default();
@@ -163,8 +164,16 @@ impl VulkanApp {
                 .collect();
 
             let surface_fn = ash::extensions::khr::Surface::new(&entry, &instance);
+
+            let surface_format = *surface_fn
+                .get_physical_device_surface_formats(physical_device, surface)?
+                .get(0)
+                .ok_or(VulkanError::NoSurfaceFormat)?;
+
             Ok(Self {
                 _entry: entry,
+                physical_device,
+                surface_format,
                 instance,
                 surface,
                 swapchain,
@@ -181,12 +190,11 @@ impl VulkanApp {
         }
     }
 
-    pub fn resize(&mut self, size: PhysicalSize<u32>) -> anyhow::Result<()> {
+    pub fn resize(&mut self, size: PhysicalSize<u32>) {
         self.swapchain.update(vk::Extent2D {
             width: size.width,
             height: size.height,
         });
-        Ok(())
     }
 
     pub fn draw(
@@ -239,6 +247,22 @@ impl VulkanApp {
         }
         Ok(())
     }
+
+    pub fn images(&self) -> &[vk::Image] {
+        self.swapchain.images()
+    }
+
+    /// Get a reference to the vulkan app's device.
+    #[must_use]
+    pub fn device(&self) -> &ash::Device {
+        &self.device
+    }
+
+    /// Get the vulkan app's surface format.
+    #[must_use]
+    pub fn surface_format(&self) -> SurfaceFormatKHR {
+        self.surface_format
+    }
 }
 
 impl Drop for VulkanApp {
@@ -251,7 +275,8 @@ impl Drop for VulkanApp {
             self.device.destroy_command_pool(self.command_pool, None);
             self.swapchain.destroy(&ash_swapchain::Functions {
                 device: &self.device,
-                swapchain: &self.functions.swapchain, surface: &self.functions.surface,
+                swapchain: &self.functions.swapchain,
+                surface: &self.functions.surface,
             });
             self.functions.surface.destroy_surface(self.surface, None);
             self.device.destroy_device(None);
