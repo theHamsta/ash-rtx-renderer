@@ -1,6 +1,6 @@
 use ash::vk;
 use log::{error, info};
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
 use clap::Parser;
 use mesh::Mesh;
@@ -31,7 +31,10 @@ fn main() -> anyhow::Result<()> {
     pretty_env_logger::try_init()?;
 
     let args = Args::parse();
-    let mesh = Mesh::from_file(&args.mesh_file, crate::mesh::ReadOptions::OnlyTriangles)?;
+    let mesh = Rc::new(Mesh::from_file(
+        &args.mesh_file,
+        crate::mesh::ReadOptions::OnlyTriangles,
+    )?);
     info!(
         "Loaded mesh with {} triangles and {} vertices. vertex_normals: {}.",
         mesh.num_triangles(),
@@ -50,6 +53,9 @@ fn main() -> anyhow::Result<()> {
         RendererImpl::ColorSine(ColorSine::default()),
         RendererImpl::Orthographic(Orthographic::default()),
     ];
+    for r in renderers.iter_mut() {
+        r.set_mesh(&mesh);
+    }
     let mut active_drawer_idx = 0;
 
     event_loop.run(move |event, _, control_flow| {

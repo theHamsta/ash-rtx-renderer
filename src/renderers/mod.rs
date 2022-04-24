@@ -14,7 +14,7 @@ use self::ortho::Orthographic;
 
 #[enum_dispatch]
 pub trait Renderer {
-    fn set_mesh(&mut self, mesh: Rc<Mesh>) {}
+    fn set_mesh(&mut self, mesh: &Rc<Mesh>) {}
     fn set_resolution(
         &mut self,
         device: &ash::Device,

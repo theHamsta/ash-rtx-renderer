@@ -64,8 +64,8 @@ impl Renderer for Orthographic {
         Ok(())
     }
 
-    fn set_mesh(&mut self, mesh: Rc<Mesh>) {
-        self.mesh = Some(mesh);
+    fn set_mesh(&mut self, mesh: &Rc<Mesh>) {
+        self.mesh = Some(Rc::clone(mesh));
     }
 
     fn set_resolution(
