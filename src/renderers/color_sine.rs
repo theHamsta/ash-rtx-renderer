@@ -15,6 +15,7 @@ impl Renderer for ColorSine {
         cmd: vk::CommandBuffer,
         image: vk::Image,
         start_instant: Instant,
+        _swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         trace!("draw for {self:?}");
 

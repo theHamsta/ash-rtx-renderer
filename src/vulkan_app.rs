@@ -199,7 +199,7 @@ impl VulkanApp {
 
     pub fn draw(
         &mut self,
-        draw_fn: impl Fn(&ash::Device, vk::CommandBuffer, vk::Image, Instant) -> anyhow::Result<()>,
+        draw_fn: impl Fn(&ash::Device, vk::CommandBuffer, vk::Image, Instant, usize) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         let device = &self.device;
         unsafe {
@@ -222,7 +222,7 @@ impl VulkanApp {
                     .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
             )?;
 
-            draw_fn(&self.device, cmd, swapchain_image, self.start_instant)?;
+            draw_fn(&self.device, cmd, swapchain_image, self.start_instant, acq.frame_index)?;
 
             device.end_command_buffer(cmd)?;
             device.queue_submit(

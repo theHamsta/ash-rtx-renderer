@@ -14,14 +14,15 @@ use self::ortho::Orthographic;
 
 #[enum_dispatch]
 pub trait Renderer {
-    fn set_mesh(&mut self, mesh: &Rc<Mesh>) {}
+    fn set_mesh(&mut self, _mesh: &Rc<Mesh>) {}
     fn set_resolution(
         &mut self,
-        device: &ash::Device,
-        surface_format: SurfaceFormatKHR,
-        size: vk::Extent2D,
-        images: &[vk::Image],
-    ) {
+        _device: &ash::Device,
+        _surface_format: SurfaceFormatKHR,
+        _size: vk::Extent2D,
+        _images: &[vk::Image],
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
     fn draw(
         &self,
@@ -29,6 +30,7 @@ pub trait Renderer {
         cmd: vk::CommandBuffer,
         image: vk::Image,
         start_instant: Instant,
+        swapchain_idx: usize,
     ) -> anyhow::Result<()>;
 }
 
