@@ -16,7 +16,7 @@ pub fn main() -> anyhow::Result<()> {
                         "--target-env=vulkan1.3",
                         "-g",
                         "-o",
-                        &format!("{}.spirv", entry.to_string_lossy().to_string()),
+                        &format!("{}.spirv", entry.to_string_lossy()),
                         "-O",
                     ])
                     .output()?;
