@@ -11,6 +11,7 @@ use std::{
 };
 
 use ash::{util::Align, vk};
+use log::debug;
 
 use crate::mesh::Mesh;
 
@@ -57,13 +58,18 @@ impl Buffer {
     where
         T: Copy,
     {
+        debug!("allocating memory: {:?}", buffer_create_info);
         unsafe {
-            let buffer = device.create_buffer(&buffer_create_info, None)?;
+            let buffer = device.create_buffer(buffer_create_info, None)?;
             let req = device.get_buffer_memory_requirements(buffer);
             let index = find_memorytype_index(
                 &req,
-                &mem_properties,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                mem_properties,
+                if host_memory.is_some() {
+                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
+                } else {
+                    vk::MemoryPropertyFlags::DEVICE_LOCAL
+                },
             )
             .ok_or_else(|| anyhow::anyhow!("Failed to get memory index"))?;
             let memory = device.allocate_memory(
@@ -89,9 +95,15 @@ impl Buffer {
     }
 }
 
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub enum AttributeType {
+    Position,
+    Index,
+}
+
 pub struct DeviceMesh {
     mesh: Rc<Mesh>,
-    buffers: HashMap<String, Buffer>,
+    buffers: HashMap<AttributeType, Buffer>,
 }
 
 impl DeviceMesh {
@@ -102,9 +114,9 @@ impl DeviceMesh {
     ) -> anyhow::Result<Self> {
         let mut buffers = HashMap::new();
         buffers.insert(
-            "positions".to_owned(),
+            AttributeType::Position,
             Buffer::new(
-                &device,
+                device,
                 mem_properties,
                 &vk::BufferCreateInfo::default()
                     .size((3 * size_of::<f32>() * mesh.num_vertices()) as vk::DeviceSize)
@@ -114,9 +126,9 @@ impl DeviceMesh {
             )?,
         );
         buffers.insert(
-            "indices".to_owned(),
+            AttributeType::Index,
             Buffer::new(
-                &device,
+                device,
                 mem_properties,
                 &vk::BufferCreateInfo::default()
                     .size((3 * size_of::<u32>() * mesh.num_triangles()) as vk::DeviceSize)
@@ -127,8 +139,24 @@ impl DeviceMesh {
         );
 
         Ok(Self {
-            mesh: Rc::clone(&mesh),
+            mesh: Rc::clone(mesh),
             buffers,
         })
+    }
+
+    pub fn position(&self) -> Option<&vk::Buffer> {
+        self.buffers.get(&AttributeType::Position).map(|b| &b.buffer)
+    }
+
+    pub fn indices(&self) -> Option<&vk::Buffer> {
+        self.buffers.get(&AttributeType::Index).map(|b| &b.buffer)
+    }
+    
+    pub fn num_triangles(&self) -> usize {
+        self.mesh.num_triangles()
+    }
+
+    pub fn num_vertices(&self) -> usize {
+        self.mesh.num_vertices()
     }
 }

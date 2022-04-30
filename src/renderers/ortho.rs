@@ -1,9 +1,9 @@
 use std::{rc::Rc, time::Instant};
 
 use ash::vk;
-use log::trace;
+use log::{debug, trace};
 
-use crate::{ shader::ShaderPipeline, device_mesh::DeviceMesh};
+use crate::{device_mesh::DeviceMesh, shader::ShaderPipeline};
 
 use super::Renderer;
 
@@ -17,6 +17,8 @@ pub struct Orthographic {
     device: Option<Rc<ash::Device>>,
     renderpass: vk::RenderPass,
     shader_pipeline: ShaderPipeline,
+    pipeline: Option<vk::Pipeline>,
+    resolution: vk::Rect2D,
 }
 
 impl std::fmt::Debug for Orthographic {
@@ -52,41 +54,67 @@ impl Orthographic {
 impl Renderer for Orthographic {
     fn draw(
         &self,
-        _device: &ash::Device,
-        _cmd: vk::CommandBuffer,
+        device: &ash::Device,
+        cmd: vk::CommandBuffer,
         _image: vk::Image,
         _start_instant: Instant,
-        _swapchain_idx: usize,
+        swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         trace!("draw for {self:?}");
         if !self.meshes.is_empty() {
-            //unsafe {
-            //device.cmd_begin_render_pass(
-            //cmd,
-            //&render_pass_begin_info,
-            //vk::SubpassContents::INLINE,
-            //);
-            //device.cmd_bind_pipeline(
-            //cmd,
-            //vk::PipelineBindPoint::GRAPHICS,
-            //self.graphic_pipeline,
-            //);
-            //device.cmd_set_viewport(cmd, 0, &self.viewports);
-            //device.cmd_set_scissor(cmd, 0, &self.scissors);
-            //device.cmd_bind_vertex_buffers(cmd, 0, &[self.vertex_input_buffer], &[0]);
-            //device.cmd_bind_index_buffer(cmd, self.index_buffer, 0, vk::IndexType::UINT32);
-            //device.cmd_draw_indexed(cmd, self.index_buffer_data.len() as u32, 1, 0, 0, 1);
-            //// Or draw without the index buffer
-            //// device.cmd_draw(draw_command_buffer, 3, 1, 0, 0);
-            //device.cmd_end_render_pass(cmd);
-            //}
-            //todo!();
+            let clear_values = [
+                vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 0.0],
+                    },
+                },
+                vk::ClearValue {
+                    depth_stencil: vk::ClearDepthStencilValue {
+                        depth: 1.0,
+                        stencil: 0,
+                    },
+                },
+            ];
+            if let Some(pipeline) = self.pipeline {
+                let render_pass_begin_info = vk::RenderPassBeginInfo::default()
+                    .render_pass(self.renderpass)
+                    .framebuffer(self.framebuffers[swapchain_idx as usize])
+                    .render_area(self.resolution)
+                    .clear_values(&clear_values);
+                unsafe {
+                    device.cmd_begin_render_pass(
+                        cmd,
+                        &render_pass_begin_info,
+                        vk::SubpassContents::INLINE,
+                    );
+                    device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
+                    device.cmd_set_viewport(cmd, 0, &self.viewports);
+                    device.cmd_set_scissor(cmd, 0, &self.scissors);
+                    for mesh in self.meshes.iter() {
+                        device.cmd_bind_vertex_buffers(
+                            cmd,
+                            0,
+                            &[*mesh
+                                .position()
+                                .ok_or_else(|| anyhow::anyhow!("Mesh has no vertex positions"))?],
+                            &[0],
+                        );
+                        if let Some(&idx_buffer) = mesh.indices() {
+                            device.cmd_bind_index_buffer(cmd, idx_buffer, 0, vk::IndexType::UINT32);
+                            device.cmd_draw_indexed(cmd, mesh.num_triangles() as u32, 1, 0, 0, 1);
+                        } else {
+                            device.cmd_draw(cmd, mesh.num_vertices() as u32, 1, 0, 0);
+                        }
+                    }
+                    device.cmd_end_render_pass(cmd);
+                }
+            }
         }
         Ok(())
     }
 
     fn set_meshes(&mut self, meshes: &[Rc<DeviceMesh>]) {
-        self.meshes = meshes.iter().cloned().collect();
+        self.meshes = meshes.to_vec();
     }
 
     fn set_resolution(
@@ -96,6 +124,7 @@ impl Renderer for Orthographic {
         size: vk::Extent2D,
         images: &[vk::Image],
     ) -> anyhow::Result<()> {
+        debug!("Set resolution: {size:?} images: {images:?}");
         self.destroy_images();
         self.shader_pipeline = ShaderPipeline::new(
             device,
@@ -105,52 +134,6 @@ impl Renderer for Orthographic {
             ],
         )?;
 
-        let renderpass_attachments = [
-            vk::AttachmentDescription {
-                format: surface_format.format,
-                samples: vk::SampleCountFlags::TYPE_1,
-                load_op: vk::AttachmentLoadOp::CLEAR,
-                store_op: vk::AttachmentStoreOp::STORE,
-                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-                ..Default::default()
-            },
-            //vk::AttachmentDescription {
-            //format: vk::Format::D16_UNORM,
-            //samples: vk::SampleCountFlags::TYPE_1,
-            //load_op: vk::AttachmentLoadOp::CLEAR,
-            //initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            //final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            //..Default::default()
-            //},
-        ];
-        let color_attachment_refs = [vk::AttachmentReference {
-            attachment: 0,
-            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        }];
-        //let depth_attachment_ref = vk::AttachmentReference {
-        //attachment: 1,
-        //layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        //};
-        let dependencies = [vk::SubpassDependency {
-            src_subpass: vk::SUBPASS_EXTERNAL,
-            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ
-                | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            ..Default::default()
-        }];
-
-        let subpass = vk::SubpassDescription::default()
-            .color_attachments(&color_attachment_refs)
-            //.depth_stencil_attachment(&depth_attachment_ref)
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
-
-        let renderpass_create_info = vk::RenderPassCreateInfo::default()
-            .attachments(&renderpass_attachments)
-            .subpasses(std::slice::from_ref(&subpass))
-            .dependencies(&dependencies);
-
-        self.renderpass = unsafe { device.create_render_pass(&renderpass_create_info, None)? };
         self.viewports = vec![vk::Viewport {
             x: 0.0,
             y: 0.0,
@@ -160,6 +143,16 @@ impl Renderer for Orthographic {
             max_depth: 1.0,
         }];
         self.scissors = vec![size.into()];
+        let vertex_attribute_desc = [];
+        let vertex_binding_desc = [];
+        self.pipeline = Some(self.shader_pipeline.make_graphics_pipeline(
+            device,
+            &self.scissors,
+            &self.viewports,
+            surface_format,
+            &vertex_attribute_desc,
+            &vertex_binding_desc,
+        )?);
         self.image_views = images
             .iter()
             .map(|&image| {
@@ -198,12 +191,13 @@ impl Renderer for Orthographic {
                 unsafe {
                     device
                         .create_framebuffer(&frame_buffer_create_info, None)
-                        .unwrap()
+                        .map_err(|err| anyhow::anyhow!("Failed to create framebuffer: {err}"))
                 }
             })
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         self.device = Some(Rc::clone(device));
+        self.resolution = size.into();
         Ok(())
     }
 

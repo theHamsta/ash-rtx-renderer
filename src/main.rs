@@ -1,7 +1,7 @@
 use anyhow::Error;
 use ash::vk;
 use device_mesh::DeviceMesh;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::{
     path::PathBuf,
     rc::Rc,
@@ -97,7 +97,16 @@ fn main() -> anyhow::Result<()> {
             Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
                 WindowEvent::CloseRequested => exit(),
                 WindowEvent::Resized(size) => {
+                    debug!("Resized: {size:?}");
                     vulkan_app.resize(size);
+                    if let Err(err) = vulkan_app.draw(
+                        |_device, _cmd, _image, _instant, _swapchain_idx| -> Result<(), anyhow::Error> {
+                            Ok(())
+                        },
+                    ) {
+                        renderers.drain(..);
+                        fail(err);
+                    };
                     for r in renderers.iter_mut() {
                         if let Err(err) = r.set_resolution(
                             vulkan_app.device(),

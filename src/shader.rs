@@ -1,19 +1,14 @@
-use std::{
-    collections::{HashMap, HashSet},
-    io::Cursor,
-};
+use std::ffi::CStr;
+use std::intrinsics::transmute;
+use std::io::Cursor;
 
+use ash::vk::{VertexInputAttributeDescription, VertexInputBindingDescription};
 use ash::{util::read_spv, vk};
 use log::debug;
-use rspirv_reflect::Reflection;
-use spirv_reflect::types::ReflectInterfaceVariable;
-
-use crate::mesh::Mesh;
 
 pub struct Shader {
     module: vk::ShaderModule,
     info: spirv_reflect::ShaderModule,
-    alt_info: Reflection,
 }
 
 #[derive(Default)]
@@ -27,8 +22,6 @@ impl ShaderPipeline {
         for &bytes in shader_bytes {
             let info = spirv_reflect::ShaderModule::load_u8_data(bytes)
                 .map_err(|err| anyhow::anyhow!("{err}"))?;
-            let alt_info = Reflection::new_from_spirv(bytes)
-                .map_err(|err| anyhow::anyhow!("Failed to get reflection info: {err}"))?;
             debug!(
                 "Loaded shader {:?} ({:?}) in: {:?}, out: {:?} _push_constant_blocks {:?}",
                 info.get_source_file(),
@@ -36,12 +29,6 @@ impl ShaderPipeline {
                 info.enumerate_input_variables(None),
                 info.enumerate_output_variables(None),
                 info.enumerate_push_constant_blocks(None)
-            );
-
-            debug!(
-                "Info {:?} \n {:?}",
-                alt_info.get_descriptor_sets(),
-                alt_info.get_descriptor_sets()
             );
 
             shaders.push(Shader {
@@ -53,50 +40,157 @@ impl ShaderPipeline {
                     )?
                 },
                 info,
-                alt_info,
+                //alt_info,
             });
         }
         Ok(Self { shaders })
     }
 
-    pub fn allocate_for_mesh(&self, mesh: &Mesh) -> anyhow::Result<HashMap<String, vk::Buffer>> {
-        let mut outputs = HashSet::new();
-        for shader in self.shaders.iter() {
-            for var in shader
-                .info
-                .enumerate_output_variables(None)
-                .map_err(|err| {
-                    anyhow::anyhow!(
-                        "Failed to enumerate shader output variables: {}",
-                        err.to_owned()
-                    )
-                })?
-            {
-                outputs.insert(var.name);
-            }
-        }
+    pub fn make_graphics_pipeline(
+        &self,
+        device: &ash::Device,
+        scissors: &[vk::Rect2D],
+        viewports: &[vk::Viewport],
+        surface_format: vk::SurfaceFormatKHR,
+        vertex_input_attribute_descriptions: &[VertexInputAttributeDescription],
+        vertex_input_binding_descriptions: &[VertexInputBindingDescription],
+    ) -> anyhow::Result<vk::Pipeline> {
+        let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
+        let shader_stage_create_infos = self
+            .shaders
+            .iter()
+            .map(|shader| {
+                vk::PipelineShaderStageCreateInfo::default()
+                    .name(shader_entry_name)
+                    .module(shader.module)
+                    .stage(unsafe { transmute(shader.info.get_shader_stage()) })
+            })
+            .collect::<Vec<_>>();
 
-        let mut buffers = HashMap::new();
-        for shader in self.shaders.iter() {
-            for var in shader.info.enumerate_input_variables(None).map_err(|err| {
-                anyhow::anyhow!(
-                    "Failed to enumerate shader input variables: {}",
-                    err.to_owned()
-                )
-            })? {
-                if !outputs.contains(&var.name) {
-                    let ReflectInterfaceVariable {
-                        name,
-                        location,
-                        type_description,
-                        word_offset,
-                        format,
-                        ..
-                    } = var;
-                }
-            }
-        }
+        let vertex_input_state_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_attribute_descriptions(vertex_input_attribute_descriptions)
+            .vertex_binding_descriptions(vertex_input_binding_descriptions);
+        let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo {
+            topology: vk::PrimitiveTopology::TRIANGLE_LIST,
+            ..Default::default()
+        };
+        let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
+            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+            line_width: 1.0,
+            polygon_mode: vk::PolygonMode::FILL,
+            ..Default::default()
+        };
+        let multisample_state_info = vk::PipelineMultisampleStateCreateInfo {
+            rasterization_samples: vk::SampleCountFlags::TYPE_1,
+            ..Default::default()
+        };
+        let noop_stencil_state = vk::StencilOpState {
+            fail_op: vk::StencilOp::KEEP,
+            pass_op: vk::StencilOp::KEEP,
+            depth_fail_op: vk::StencilOp::KEEP,
+            compare_op: vk::CompareOp::ALWAYS,
+            ..Default::default()
+        };
+        let depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+            depth_test_enable: 1,
+            depth_write_enable: 1,
+            depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+            front: noop_stencil_state,
+            back: noop_stencil_state,
+            max_depth_bounds: 1.0,
+            ..Default::default()
+        };
+        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
+            blend_enable: 0,
+            src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
+            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_DST_COLOR,
+            color_blend_op: vk::BlendOp::ADD,
+            src_alpha_blend_factor: vk::BlendFactor::ZERO,
+            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+            alpha_blend_op: vk::BlendOp::ADD,
+            color_write_mask: vk::ColorComponentFlags::RGBA,
+        }];
+        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
+            .logic_op(vk::LogicOp::CLEAR)
+            .attachments(&color_blend_attachment_states);
 
-        Ok(buffers)
+        let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
+            .scissors(scissors)
+            .viewports(viewports);
+        let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+        let color_attachment_refs = [vk::AttachmentReference {
+            attachment: 0,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        }];
+        let depth_attachment_ref = vk::AttachmentReference {
+            attachment: 1,
+            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
+
+        let subpass = vk::SubpassDescription::default()
+            .color_attachments(&color_attachment_refs)
+            .depth_stencil_attachment(&depth_attachment_ref)
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
+
+        let renderpass_attachments = [
+            vk::AttachmentDescription {
+                format: surface_format.format,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                ..Default::default()
+            },
+            vk::AttachmentDescription {
+                format: vk::Format::D16_UNORM,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
+        ];
+
+        let dependencies = [vk::SubpassDependency {
+            src_subpass: vk::SUBPASS_EXTERNAL,
+            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ
+                | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ..Default::default()
+        }];
+
+        let renderpass_create_info = vk::RenderPassCreateInfo::default()
+            .attachments(&renderpass_attachments)
+            .subpasses(std::slice::from_ref(&subpass))
+            .dependencies(&dependencies);
+
+        let renderpass = unsafe { device.create_render_pass(&renderpass_create_info, None)? };
+
+        let dynamic_state_info =
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
+
+        let layout_create_info = vk::PipelineLayoutCreateInfo::default();
+
+        let pipeline_layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
+        Ok(unsafe {
+            device.create_graphics_pipelines(
+                vk::PipelineCache::null(), // TODO:: create cache
+                &[vk::GraphicsPipelineCreateInfo::default()
+                    .stages(&shader_stage_create_infos)
+                    .vertex_input_state(&vertex_input_state_info)
+                    .input_assembly_state(&vertex_input_assembly_state_info)
+                    .viewport_state(&viewport_state_info)
+                    .rasterization_state(&rasterization_info)
+                    .multisample_state(&multisample_state_info)
+                    .depth_stencil_state(&depth_state_info)
+                    .color_blend_state(&color_blend_state)
+                    .dynamic_state(&dynamic_state_info)
+                    .layout(pipeline_layout)
+                    .render_pass(renderpass)],
+                None,
+            )
+        }
+        .map_err(|(_pipes, err)| err)?[0])
     }
 }

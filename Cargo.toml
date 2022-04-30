@@ -25,7 +25,7 @@ pretty_env_logger = "0.4.0"
 thiserror = "1.0.30"
 enum_dispatch = "0.3.8"
 spirv-reflect = { git = "https://github.com/theHamsta/spirv-reflect-rs.git" }
-rspirv-reflect = "0.7"
+#rspirv-reflect = "0.7"
 # Nice additions
 #gpu-allocator = "0.15.0"
 #meshopt = "0.1.9"
