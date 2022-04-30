@@ -3,18 +3,18 @@ use std::{rc::Rc, time::Instant};
 use ash::vk;
 use log::trace;
 
-use crate::{mesh::Mesh, shader::ShaderPipeline};
+use crate::{ shader::ShaderPipeline, device_mesh::DeviceMesh};
 
 use super::Renderer;
 
 #[derive(Default)]
 pub struct Orthographic {
-    meshes: Vec<Rc<Mesh>>,
+    meshes: Vec<Rc<DeviceMesh>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
     image_views: Vec<vk::ImageView>,
     framebuffers: Vec<vk::Framebuffer>,
-    device: Option<ash::Device>,
+    device: Option<Rc<ash::Device>>,
     renderpass: vk::RenderPass,
     shader_pipeline: ShaderPipeline,
 }
@@ -22,7 +22,6 @@ pub struct Orthographic {
 impl std::fmt::Debug for Orthographic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Orthographic")
-            .field("mesh", &self.meshes)
             .field("viewports", &self.viewports)
             .field("scissors", &self.scissors)
             .field("image_views", &self.image_views)
@@ -86,13 +85,13 @@ impl Renderer for Orthographic {
         Ok(())
     }
 
-    fn set_meshes(&mut self, meshes: &[Rc<Mesh>]) {
+    fn set_meshes(&mut self, meshes: &[Rc<DeviceMesh>]) {
         self.meshes = meshes.iter().cloned().collect();
     }
 
     fn set_resolution(
         &mut self,
-        device: &ash::Device,
+        device: &Rc<ash::Device>,
         surface_format: ash::vk::SurfaceFormatKHR,
         size: vk::Extent2D,
         images: &[vk::Image],
@@ -204,7 +203,7 @@ impl Renderer for Orthographic {
             })
             .collect();
 
-        self.device = Some(device.clone());
+        self.device = Some(Rc::clone(device));
         Ok(())
     }
 

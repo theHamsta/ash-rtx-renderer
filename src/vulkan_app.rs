@@ -1,8 +1,11 @@
-use std::os::raw::c_char;
 use std::time::Instant;
+use std::{os::raw::c_char, rc::Rc};
 
 use anyhow::Context;
-use ash::{extensions::khr, vk::{self, SurfaceFormatKHR}};
+use ash::{
+    extensions::khr,
+    vk::{self, SurfaceFormatKHR},
+};
 use ash_swapchain::Swapchain;
 use log::{error, info};
 use winit::{dpi::PhysicalSize, window::Window};
@@ -33,11 +36,12 @@ pub struct VulkanApp {
     graphics_queue: vk::Queue,
     surface_format: vk::SurfaceFormatKHR,
     start_instant: Instant,
-    device: ash::Device,
+    device: Rc<ash::Device>,
     swapchain: Swapchain,
     frames: Vec<Frame>,
     functions: Functions,
     command_pool: vk::CommandPool,
+    device_memory_properties: vk::PhysicalDeviceMemoryProperties,
 }
 
 impl VulkanApp {
@@ -108,15 +112,17 @@ impl VulkanApp {
                 })
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
 
-            let device = instance.create_device(
-                physical_device,
-                &vk::DeviceCreateInfo::default()
-                    .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
-                    .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
-                        .queue_family_index(queue_family_index)
-                        .queue_priorities(&[1.0])]),
-                None,
-            )?;
+            let device = Rc::new(
+                instance.create_device(
+                    physical_device,
+                    &vk::DeviceCreateInfo::default()
+                        .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
+                        .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
+                            .queue_family_index(queue_family_index)
+                            .queue_priorities(&[1.0])]),
+                    None,
+                )?,
+            );
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let mut swapchain_options = ash_swapchain::Options::default();
@@ -169,6 +175,8 @@ impl VulkanApp {
                 .get_physical_device_surface_formats(physical_device, surface)?
                 .get(0)
                 .ok_or(VulkanError::NoSurfaceFormat)?;
+            let device_memory_properties =
+                instance.get_physical_device_memory_properties(physical_device);
 
             Ok(Self {
                 _entry: entry,
@@ -186,6 +194,7 @@ impl VulkanApp {
                     surface: surface_fn,
                     swapchain: swapchain_fn,
                 },
+                device_memory_properties,
             })
         }
     }
@@ -199,7 +208,13 @@ impl VulkanApp {
 
     pub fn draw(
         &mut self,
-        draw_fn: impl Fn(&ash::Device, vk::CommandBuffer, vk::Image, Instant, usize) -> anyhow::Result<()>,
+        draw_fn: impl Fn(
+            &ash::Device,
+            vk::CommandBuffer,
+            vk::Image,
+            Instant,
+            usize,
+        ) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         let device = &self.device;
         unsafe {
@@ -222,7 +237,13 @@ impl VulkanApp {
                     .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
             )?;
 
-            draw_fn(&self.device, cmd, swapchain_image, self.start_instant, acq.frame_index)?;
+            draw_fn(
+                &self.device,
+                cmd,
+                swapchain_image,
+                self.start_instant,
+                acq.frame_index,
+            )?;
 
             device.end_command_buffer(cmd)?;
             device.queue_submit(
@@ -254,7 +275,7 @@ impl VulkanApp {
 
     /// Get a reference to the vulkan app's device.
     #[must_use]
-    pub fn device(&self) -> &ash::Device {
+    pub fn device(&self) -> &Rc<ash::Device> {
         &self.device
     }
 
@@ -262,6 +283,10 @@ impl VulkanApp {
     #[must_use]
     pub fn surface_format(&self) -> SurfaceFormatKHR {
         self.surface_format
+    }
+
+    pub(crate) fn device_memory_properties(&self) -> &vk::PhysicalDeviceMemoryProperties {
+        &self.device_memory_properties
     }
 }
 

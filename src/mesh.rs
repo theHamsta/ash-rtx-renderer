@@ -2,27 +2,27 @@ use ply_rs::ply;
 use std::{os::unix::prelude::OsStrExt, path::Path};
 
 #[derive(Debug, Default, Clone, Copy)]
-struct Position {
+pub struct Position {
     x: f32,
     y: f32,
     z: f32,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-struct Normal {
+pub struct Normal {
     x: f32,
     y: f32,
     z: f32,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-struct Vertex {
+pub struct Vertex {
     pos: Position,
     normal: Option<Normal>,
 }
 
-#[derive(Debug, Default)]
-struct Triangle {
+#[derive(Debug, Default, Copy, Clone)]
+pub struct Triangle {
     indices: [i32; 3],
 }
 
@@ -198,5 +198,23 @@ impl Mesh {
             )
             .into()),
         }
+    }
+
+    /// Get a reference to the mesh's positions.
+    #[must_use]
+    pub fn positions(&self) -> &[Position] {
+        self.positions.as_ref()
+    }
+
+    /// Get a reference to the mesh's vertex normals.
+    #[must_use]
+    pub fn vertex_normals(&self) -> Option<&Vec<Normal>> {
+        self.vertex_normals.as_ref()
+    }
+
+    /// Get a reference to the mesh's triangles.
+    #[must_use]
+    pub fn triangles(&self) -> &[Triangle] {
+        self.triangles.as_ref()
     }
 }

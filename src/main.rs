@@ -1,5 +1,6 @@
 use anyhow::Error;
 use ash::vk;
+use device_mesh::DeviceMesh;
 use log::{error, info, warn};
 use std::{path::PathBuf, rc::Rc};
 
@@ -64,6 +65,16 @@ fn main() -> anyhow::Result<()> {
         RendererImpl::ColorSine(ColorSine::default()),
         RendererImpl::Orthographic(Orthographic::default()),
     ];
+    let meshes = meshes
+        .iter()
+        .map(|mesh| {
+            Ok(Rc::new(DeviceMesh::new(
+                vulkan_app.device(),
+                vulkan_app.device_memory_properties(),
+                mesh,
+            )?))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
     for r in renderers.iter_mut() {
         r.set_meshes(&meshes);
     }

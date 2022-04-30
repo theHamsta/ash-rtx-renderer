@@ -7,7 +7,7 @@ use std::time::Instant;
 use ash::vk::{self, SurfaceFormatKHR};
 use enum_dispatch::enum_dispatch;
 
-use crate::mesh::Mesh;
+use crate::device_mesh::DeviceMesh;
 use crate::shader::ShaderPipeline;
 
 use self::color_sine::ColorSine;
@@ -15,11 +15,11 @@ use self::ortho::Orthographic;
 
 #[enum_dispatch]
 pub trait Renderer {
-    fn set_meshes(&mut self, _meshes: &[Rc<Mesh>]) {}
+    fn set_meshes(&mut self, _meshes: &[Rc<DeviceMesh>]) {}
 
     fn set_resolution(
         &mut self,
-        _device: &ash::Device,
+        _device: &Rc<ash::Device>,
         _surface_format: SurfaceFormatKHR,
         _size: vk::Extent2D,
         _images: &[vk::Image],
