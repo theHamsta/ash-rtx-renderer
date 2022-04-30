@@ -8,13 +8,15 @@ use ash::vk::{self, SurfaceFormatKHR};
 use enum_dispatch::enum_dispatch;
 
 use crate::mesh::Mesh;
+use crate::shader::ShaderPipeline;
 
 use self::color_sine::ColorSine;
 use self::ortho::Orthographic;
 
 #[enum_dispatch]
 pub trait Renderer {
-    fn set_mesh(&mut self, _mesh: &Rc<Mesh>) {}
+    fn set_meshes(&mut self, _meshes: &[Rc<Mesh>]) {}
+
     fn set_resolution(
         &mut self,
         _device: &ash::Device,
@@ -24,6 +26,7 @@ pub trait Renderer {
     ) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn draw(
         &self,
         device: &ash::Device,
@@ -32,6 +35,10 @@ pub trait Renderer {
         start_instant: Instant,
         swapchain_idx: usize,
     ) -> anyhow::Result<()>;
+
+    fn graphics_pipeline(&self) -> Option<&ShaderPipeline> {
+        None
+    }
 }
 
 #[enum_dispatch(Renderer)]

@@ -1,6 +1,6 @@
 use anyhow::Error;
 use ash::vk;
-use log::{error, info};
+use log::{error, info, warn};
 use std::{path::PathBuf, rc::Rc};
 
 use clap::Parser;
@@ -16,6 +16,7 @@ use crate::{
     vulkan_app::VulkanApp,
 };
 
+mod device_mesh;
 mod mesh;
 mod renderers;
 mod shader;
@@ -26,23 +27,31 @@ mod vulkan_app;
 struct Args {
     /// Mesh file to render
     #[clap(short, long)]
-    mesh_file: PathBuf,
+    mesh_file: Vec<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
     pretty_env_logger::try_init()?;
 
     let args = Args::parse();
-    let mesh = Rc::new(Mesh::from_file(
-        &args.mesh_file,
-        crate::mesh::ReadOptions::OnlyTriangles,
-    )?);
-    info!(
-        "Loaded mesh with {} triangles and {} vertices. vertex_normals: {}.",
-        mesh.num_triangles(),
-        mesh.num_vertices(),
-        mesh.has_vertex_normals()
-    );
+    let mut meshes = Vec::new();
+    for mesh in args
+        .mesh_file
+        .iter()
+        .map(|mesh| Mesh::from_file(&mesh, crate::mesh::ReadOptions::OnlyTriangles))
+    {
+        let mesh = mesh?;
+        info!(
+            "Loaded mesh with {} triangles and {} vertices. vertex_normals: {}.",
+            mesh.num_triangles(),
+            mesh.num_vertices(),
+            mesh.has_vertex_normals()
+        );
+        meshes.push(Rc::new(mesh));
+    }
+    if meshes.is_empty() {
+        warn!("No meshes specified!");
+    }
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
@@ -56,7 +65,7 @@ fn main() -> anyhow::Result<()> {
         RendererImpl::Orthographic(Orthographic::default()),
     ];
     for r in renderers.iter_mut() {
-        r.set_mesh(&mesh);
+        r.set_meshes(&meshes);
     }
     let mut active_drawer_idx = 0;
 

@@ -9,20 +9,20 @@ use super::Renderer;
 
 #[derive(Default)]
 pub struct Orthographic {
-    mesh: Option<Rc<Mesh>>,
+    meshes: Vec<Rc<Mesh>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
     image_views: Vec<vk::ImageView>,
     framebuffers: Vec<vk::Framebuffer>,
     device: Option<ash::Device>,
     renderpass: vk::RenderPass,
-    shader_module: ShaderPipeline,
+    shader_pipeline: ShaderPipeline,
 }
 
 impl std::fmt::Debug for Orthographic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Orthographic")
-            .field("mesh", &self.mesh)
+            .field("mesh", &self.meshes)
             .field("viewports", &self.viewports)
             .field("scissors", &self.scissors)
             .field("image_views", &self.image_views)
@@ -60,7 +60,7 @@ impl Renderer for Orthographic {
         _swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         trace!("draw for {self:?}");
-        if self.mesh.is_some() {
+        if !self.meshes.is_empty() {
             //unsafe {
             //device.cmd_begin_render_pass(
             //cmd,
@@ -86,8 +86,8 @@ impl Renderer for Orthographic {
         Ok(())
     }
 
-    fn set_mesh(&mut self, mesh: &Rc<Mesh>) {
-        self.mesh = Some(Rc::clone(mesh));
+    fn set_meshes(&mut self, meshes: &[Rc<Mesh>]) {
+        self.meshes = meshes.iter().cloned().collect();
     }
 
     fn set_resolution(
@@ -98,7 +98,7 @@ impl Renderer for Orthographic {
         images: &[vk::Image],
     ) -> anyhow::Result<()> {
         self.destroy_images();
-        self.shader_module = ShaderPipeline::new(
+        self.shader_pipeline = ShaderPipeline::new(
             device,
             &[
                 &include_bytes!("../../shaders/triangle.vert.spirv")[..],
@@ -206,6 +206,10 @@ impl Renderer for Orthographic {
 
         self.device = Some(device.clone());
         Ok(())
+    }
+
+    fn graphics_pipeline(&self) -> Option<&ShaderPipeline> {
+        Some(&self.shader_pipeline)
     }
 }
 
