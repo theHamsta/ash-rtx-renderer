@@ -99,6 +99,7 @@ fn main() -> anyhow::Result<()> {
                 WindowEvent::Resized(size) => {
                     debug!("Resized: {size:?}");
                     vulkan_app.resize(size);
+                    // Do one draw call to rebuild swapchain
                     if let Err(err) = vulkan_app.draw(
                         |_device, _cmd, _image, _instant, _swapchain_idx| -> Result<(), anyhow::Error> {
                             Ok(())
@@ -107,6 +108,7 @@ fn main() -> anyhow::Result<()> {
                         renderers.drain(..);
                         fail(err);
                     };
+                    // Set resolution for renderers with new swapchain images
                     for r in renderers.iter_mut() {
                         if let Err(err) = r.set_resolution(
                             vulkan_app.device(),
