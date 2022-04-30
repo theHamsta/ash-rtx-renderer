@@ -2,14 +2,18 @@ use anyhow::Error;
 use ash::vk;
 use device_mesh::DeviceMesh;
 use log::{error, info, warn};
-use std::{path::PathBuf, rc::Rc};
+use std::{
+    path::PathBuf,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use clap::Parser;
 use mesh::Mesh;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{Fullscreen, WindowBuilder},
 };
 
 use crate::{
@@ -79,6 +83,7 @@ fn main() -> anyhow::Result<()> {
         r.set_meshes(&meshes);
     }
     let mut active_drawer_idx = 0;
+    let mut last_switch = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -111,6 +116,16 @@ fn main() -> anyhow::Result<()> {
                     Some(winit::event::VirtualKeyCode::Escape) => {
                         renderers.drain(..);
                         exit();
+                    }
+                    Some(winit::event::VirtualKeyCode::F | winit::event::VirtualKeyCode::F11) => {
+                        if (Instant::now() - last_switch) > Duration::from_millis(500) {
+                            last_switch = Instant::now();
+                            window.set_fullscreen(if window.fullscreen().is_some() {
+                                None
+                            } else {
+                                Some(Fullscreen::Borderless(None))
+                            })
+                        }
                     }
                     Some(
                         winit::event::VirtualKeyCode::Numpad1 | winit::event::VirtualKeyCode::Key1,
