@@ -1,3 +1,4 @@
+#[warn(unused_unsafe)]
 use std::{mem::size_of, mem::transmute, rc::Rc, time::Instant};
 
 use ash::vk;
@@ -141,11 +142,9 @@ impl Renderer for Orthographic {
                         self.pipeline_layout.unwrap(),
                         vk::ShaderStageFlags::VERTEX,
                         0,
-                        unsafe {
-                            &transmute::<PushConstants, [u8; size_of::<PushConstants>()]>(
-                                self.uniforms.unwrap(),
-                            )
-                        },
+                        &transmute::<PushConstants, [u8; size_of::<PushConstants>()]>(
+                            self.uniforms.unwrap(),
+                        ),
                     );
                     for mesh in self.meshes.iter() {
                         device.cmd_bind_vertex_buffers(
