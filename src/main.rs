@@ -66,8 +66,8 @@ fn main() -> anyhow::Result<()> {
     let vulkan_app = Rc::new(RefCell::new(VulkanApp::new(&window)?));
 
     let mut renderers = vec![
-        RendererImpl::ColorSine(ColorSine::default()),
         RendererImpl::Orthographic(Orthographic::default()),
+        RendererImpl::ColorSine(ColorSine::default()),
     ];
     let meshes = meshes
         .iter()

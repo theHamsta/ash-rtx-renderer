@@ -14,8 +14,6 @@ use winit::{dpi::PhysicalSize, window::Window};
 pub enum VulkanError {
     #[error("Found no device with surface support")]
     NoDeviceForSurfaceFound,
-    #[error("Found no format for current surface")]
-    NoSurfaceFormat,
 }
 
 struct Frame {
@@ -33,7 +31,6 @@ pub struct VulkanApp {
     surface: vk::SurfaceKHR,
     _entry: ash::Entry,
     graphics_queue: vk::Queue,
-    surface_format: vk::SurfaceFormatKHR,
     start_instant: Instant,
     device: Rc<ash::Device>,
     swapchain: Swapchain,
@@ -145,7 +142,10 @@ impl VulkanApp {
             let command_pool = device
                 .create_command_pool(
                     &vk::CommandPoolCreateInfo::default()
-                        .flags(vk::CommandPoolCreateFlags::TRANSIENT)
+                        .flags(
+                            vk::CommandPoolCreateFlags::TRANSIENT
+                                | vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
+                        )
                         .queue_family_index(queue_family_index),
                     None,
                 )
@@ -170,16 +170,11 @@ impl VulkanApp {
 
             let surface_fn = ash::extensions::khr::Surface::new(&entry, &instance);
 
-            let surface_format = *surface_fn
-                .get_physical_device_surface_formats(physical_device, surface)?
-                .get(0)
-                .ok_or(VulkanError::NoSurfaceFormat)?;
             let device_memory_properties =
                 instance.get_physical_device_memory_properties(physical_device);
 
             Ok(Self {
                 _entry: entry,
-                surface_format,
                 instance,
                 surface,
                 swapchain,
@@ -280,7 +275,7 @@ impl VulkanApp {
     /// Get the vulkan app's surface format.
     #[must_use]
     pub fn surface_format(&self) -> SurfaceFormatKHR {
-        self.surface_format
+        self.swapchain.format()
     }
 
     pub(crate) fn device_memory_properties(&self) -> &vk::PhysicalDeviceMemoryProperties {
