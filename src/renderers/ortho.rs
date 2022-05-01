@@ -3,7 +3,7 @@ use std::{rc::Rc, time::Instant};
 use ash::vk;
 use log::{debug, trace};
 
-use crate::{device_mesh::DeviceMesh, shader::ShaderPipeline};
+use crate::{device_mesh::DeviceMesh, mesh::Position, shader::ShaderPipeline};
 
 use super::Renderer;
 
@@ -15,7 +15,7 @@ pub struct Orthographic {
     image_views: Vec<vk::ImageView>,
     framebuffers: Vec<vk::Framebuffer>,
     device: Option<Rc<ash::Device>>,
-    renderpass: vk::RenderPass,
+    renderpass: Option<vk::RenderPass>,
     shader_pipeline: ShaderPipeline,
     pipeline: Option<vk::Pipeline>,
     resolution: vk::Rect2D,
@@ -68,19 +68,23 @@ impl Renderer for Orthographic {
                         float32: [0.0, 0.0, 0.0, 0.0],
                     },
                 },
-                vk::ClearValue {
-                    depth_stencil: vk::ClearDepthStencilValue {
-                        depth: 1.0,
-                        stencil: 0,
-                    },
-                },
+                //vk::ClearValue {
+                    //depth_stencil: vk::ClearDepthStencilValue {
+                        //depth: 1.0,
+                        //stencil: 0,
+                    //},
+                //},
             ];
             if let Some(pipeline) = self.pipeline {
                 let render_pass_begin_info = vk::RenderPassBeginInfo::default()
-                    .render_pass(self.renderpass)
+                    .render_pass(
+                        self.renderpass
+                            .ok_or_else(|| anyhow::anyhow!("No renderpass created"))?,
+                    )
                     .framebuffer(self.framebuffers[swapchain_idx as usize])
                     .render_area(self.resolution)
                     .clear_values(&clear_values);
+                trace!("{render_pass_begin_info:?}");
                 unsafe {
                     device.cmd_begin_render_pass(
                         cmd,
@@ -143,16 +147,27 @@ impl Renderer for Orthographic {
             max_depth: 1.0,
         }];
         self.scissors = vec![size.into()];
-        let vertex_attribute_desc = [];
-        let vertex_binding_desc = [];
-        self.pipeline = Some(self.shader_pipeline.make_graphics_pipeline(
+        let vertex_attribute_desc = [vk::VertexInputAttributeDescription {
+            location: 0,
+            binding: 0,
+            format: vk::Format::R32G32B32A32_SFLOAT,
+            offset: 0,
+        }];
+        let vertex_binding_desc = [vk::VertexInputBindingDescription {
+            binding: 0,
+            stride: std::mem::size_of::<Position>() as u32,
+            input_rate: vk::VertexInputRate::VERTEX,
+        }];
+        let (pipeline, renderpass) = self.shader_pipeline.make_graphics_pipeline(
             device,
             &self.scissors,
             &self.viewports,
             surface_format,
             &vertex_attribute_desc,
             &vertex_binding_desc,
-        )?);
+        )?;
+        self.renderpass = Some(renderpass);
+        self.pipeline = Some(pipeline);
         self.image_views = images
             .iter()
             .map(|&image| {
@@ -180,9 +195,9 @@ impl Renderer for Orthographic {
             .image_views
             .iter()
             .map(|&view| {
-                let framebuffer_attachments = [view];
+                let framebuffer_attachments = [view,/* base.depth_image_view*/];
                 let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
-                    .render_pass(self.renderpass)
+                    .render_pass(renderpass)
                     .attachments(&framebuffer_attachments)
                     .width(size.width)
                     .height(size.height)

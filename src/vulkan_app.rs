@@ -32,7 +32,6 @@ pub struct VulkanApp {
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
     _entry: ash::Entry,
-    physical_device: vk::PhysicalDevice,
     graphics_queue: vk::Queue,
     surface_format: vk::SurfaceFormatKHR,
     start_instant: Instant,
@@ -48,7 +47,7 @@ impl VulkanApp {
     pub fn new(window: &Window) -> anyhow::Result<Self> {
         unsafe {
             let surface_extensions = ash_window::enumerate_required_extensions(window)?;
-            let mut instance_extensions = surface_extensions.iter().copied().collect::<Vec<_>>();
+            let mut instance_extensions = surface_extensions.to_vec();
             instance_extensions.push(khr::GetPhysicalDeviceProperties2::name().as_ptr());
             let app_desc = vk::ApplicationInfo::default()
                 .api_version(vk::make_api_version(0, 1, 0, 0))
@@ -180,7 +179,6 @@ impl VulkanApp {
 
             Ok(Self {
                 _entry: entry,
-                physical_device,
                 surface_format,
                 instance,
                 surface,

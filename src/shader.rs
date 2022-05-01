@@ -54,7 +54,7 @@ impl ShaderPipeline {
         surface_format: vk::SurfaceFormatKHR,
         vertex_input_attribute_descriptions: &[VertexInputAttributeDescription],
         vertex_input_binding_descriptions: &[VertexInputBindingDescription],
-    ) -> anyhow::Result<vk::Pipeline> {
+    ) -> anyhow::Result<(vk::Pipeline, vk::RenderPass)> {
         let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
         let shader_stage_create_infos = self
             .shaders
@@ -84,22 +84,22 @@ impl ShaderPipeline {
             rasterization_samples: vk::SampleCountFlags::TYPE_1,
             ..Default::default()
         };
-        let noop_stencil_state = vk::StencilOpState {
-            fail_op: vk::StencilOp::KEEP,
-            pass_op: vk::StencilOp::KEEP,
-            depth_fail_op: vk::StencilOp::KEEP,
-            compare_op: vk::CompareOp::ALWAYS,
-            ..Default::default()
-        };
-        let depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
-            depth_test_enable: 1,
-            depth_write_enable: 1,
-            depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
-            front: noop_stencil_state,
-            back: noop_stencil_state,
-            max_depth_bounds: 1.0,
-            ..Default::default()
-        };
+        //let noop_stencil_state = vk::StencilOpState {
+            //fail_op: vk::StencilOp::KEEP,
+            //pass_op: vk::StencilOp::KEEP,
+            //depth_fail_op: vk::StencilOp::KEEP,
+            //compare_op: vk::CompareOp::ALWAYS,
+            //..Default::default()
+        //};
+        //let depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+            //depth_test_enable: 1,
+            //depth_write_enable: 1,
+            //depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+            //front: noop_stencil_state,
+            //back: noop_stencil_state,
+            //max_depth_bounds: 1.0,
+            //..Default::default()
+        //};
         let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
             blend_enable: 0,
             src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
@@ -122,14 +122,14 @@ impl ShaderPipeline {
             attachment: 0,
             layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         }];
-        let depth_attachment_ref = vk::AttachmentReference {
-            attachment: 1,
-            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        };
+        //let depth_attachment_ref = vk::AttachmentReference {
+            //attachment: 1,
+            //layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        //};
 
         let subpass = vk::SubpassDescription::default()
             .color_attachments(&color_attachment_refs)
-            .depth_stencil_attachment(&depth_attachment_ref)
+            //.depth_stencil_attachment(&depth_attachment_ref)
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
 
         let renderpass_attachments = [
@@ -141,14 +141,14 @@ impl ShaderPipeline {
                 final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 ..Default::default()
             },
-            vk::AttachmentDescription {
-                format: vk::Format::D16_UNORM,
-                samples: vk::SampleCountFlags::TYPE_1,
-                load_op: vk::AttachmentLoadOp::CLEAR,
-                initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                ..Default::default()
-            },
+            //vk::AttachmentDescription {
+                //format: vk::Format::D16_UNORM,
+                //samples: vk::SampleCountFlags::TYPE_1,
+                //load_op: vk::AttachmentLoadOp::CLEAR,
+                //initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                //final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                //..Default::default()
+            //},
         ];
 
         let dependencies = [vk::SubpassDependency {
@@ -173,24 +173,27 @@ impl ShaderPipeline {
         let layout_create_info = vk::PipelineLayoutCreateInfo::default();
 
         let pipeline_layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
-        Ok(unsafe {
-            device.create_graphics_pipelines(
-                vk::PipelineCache::null(), // TODO:: create cache
-                &[vk::GraphicsPipelineCreateInfo::default()
-                    .stages(&shader_stage_create_infos)
-                    .vertex_input_state(&vertex_input_state_info)
-                    .input_assembly_state(&vertex_input_assembly_state_info)
-                    .viewport_state(&viewport_state_info)
-                    .rasterization_state(&rasterization_info)
-                    .multisample_state(&multisample_state_info)
-                    .depth_stencil_state(&depth_state_info)
-                    .color_blend_state(&color_blend_state)
-                    .dynamic_state(&dynamic_state_info)
-                    .layout(pipeline_layout)
-                    .render_pass(renderpass)],
-                None,
-            )
-        }
-        .map_err(|(_pipes, err)| err)?[0])
+        Ok((
+            unsafe {
+                device.create_graphics_pipelines(
+                    vk::PipelineCache::null(), // TODO:: create cache
+                    &[vk::GraphicsPipelineCreateInfo::default()
+                        .stages(&shader_stage_create_infos)
+                        .vertex_input_state(&vertex_input_state_info)
+                        .input_assembly_state(&vertex_input_assembly_state_info)
+                        .viewport_state(&viewport_state_info)
+                        .rasterization_state(&rasterization_info)
+                        .multisample_state(&multisample_state_info)
+                        //.depth_stencil_state(&depth_state_info)
+                        .color_blend_state(&color_blend_state)
+                        .dynamic_state(&dynamic_state_info)
+                        .layout(pipeline_layout)
+                        .render_pass(renderpass)],
+                    None,
+                )
+            }
+            .map_err(|(_pipes, err)| err)?[0],
+            renderpass,
+        ))
     }
 }
