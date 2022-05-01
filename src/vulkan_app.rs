@@ -49,7 +49,7 @@ impl VulkanApp {
             let app_desc = vk::ApplicationInfo::default()
                 .api_version(vk::make_api_version(0, 1, 0, 0))
                 .application_name(std::ffi::CStr::from_bytes_with_nul_unchecked(
-                    b"ash-rtx-renderer",
+                    b"ash-rtx-renderer\0",
                 ));
             let instance_desc = vk::InstanceCreateInfo::default()
                 .application_info(&app_desc)
