@@ -1,13 +1,16 @@
-use std::{rc::Rc, time::Instant};
+use std::{mem::size_of, mem::transmute, rc::Rc, time::Instant};
 
 use ash::vk;
+use cgmath::Vector4;
 use log::{debug, trace};
+use winit::event::WindowEvent;
 
-use crate::{device_mesh::DeviceMesh, mesh::Position, shader::ShaderPipeline};
+use crate::{
+    device_mesh::DeviceMesh, mesh::Position, shader::ShaderPipeline, uniforms::PushConstants,
+};
 
 use super::Renderer;
 
-#[derive(Default)]
 pub struct Orthographic {
     meshes: Vec<Rc<DeviceMesh>>,
     viewports: Vec<vk::Viewport>,
@@ -18,7 +21,37 @@ pub struct Orthographic {
     renderpass: Option<vk::RenderPass>,
     shader_pipeline: ShaderPipeline,
     pipeline: Option<vk::Pipeline>,
+    pipeline_layout: Option<vk::PipelineLayout>,
     resolution: vk::Rect2D,
+    uniforms: Option<PushConstants>,
+    size: vk::Extent2D,
+    zoom: f32,
+    rotation: f32,
+}
+
+impl Default for Orthographic {
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            meshes: Default::default(),
+            viewports: Default::default(),
+            scissors: Default::default(),
+            image_views: Default::default(),
+            framebuffers: Default::default(),
+            device: Default::default(),
+            renderpass: Default::default(),
+            shader_pipeline: Default::default(),
+            pipeline: Default::default(),
+            pipeline_layout: Default::default(),
+            resolution: Default::default(),
+            uniforms: None,
+            size: vk::Extent2D {
+                width: 0,
+                height: 0,
+            },
+            rotation: 0.0,
+        }
+    }
 }
 
 impl std::fmt::Debug for Orthographic {
@@ -49,6 +82,14 @@ impl Orthographic {
             }
         }
     }
+    fn update_push_constants(&mut self) {
+        self.uniforms = Some(PushConstants::new(
+            self.size,
+            Vector4::new(2.0, 0.0, 0.0, 1.0),
+            self.zoom,
+            self.rotation,
+        ));
+    }
 }
 
 impl Renderer for Orthographic {
@@ -69,10 +110,10 @@ impl Renderer for Orthographic {
                     },
                 },
                 //vk::ClearValue {
-                    //depth_stencil: vk::ClearDepthStencilValue {
-                        //depth: 1.0,
-                        //stencil: 0,
-                    //},
+                //depth_stencil: vk::ClearDepthStencilValue {
+                //depth: 1.0,
+                //stencil: 0,
+                //},
                 //},
             ];
             if let Some(pipeline) = self.pipeline {
@@ -94,6 +135,18 @@ impl Renderer for Orthographic {
                     device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
                     device.cmd_set_viewport(cmd, 0, &self.viewports);
                     device.cmd_set_scissor(cmd, 0, &self.scissors);
+
+                    device.cmd_push_constants(
+                        cmd,
+                        self.pipeline_layout.unwrap(),
+                        vk::ShaderStageFlags::VERTEX,
+                        0,
+                        unsafe {
+                            &transmute::<PushConstants, [u8; size_of::<PushConstants>()]>(
+                                self.uniforms.unwrap(),
+                            )
+                        },
+                    );
                     for mesh in self.meshes.iter() {
                         device.cmd_bind_vertex_buffers(
                             cmd,
@@ -130,6 +183,8 @@ impl Renderer for Orthographic {
     ) -> anyhow::Result<()> {
         debug!("Set resolution: {size:?} images: {images:?}");
         self.destroy_images();
+        self.size = size;
+        self.update_push_constants();
         self.shader_pipeline = ShaderPipeline::new(
             device,
             &[
@@ -158,7 +213,7 @@ impl Renderer for Orthographic {
             stride: std::mem::size_of::<Position>() as u32,
             input_rate: vk::VertexInputRate::VERTEX,
         }];
-        let (pipeline, renderpass) = self.shader_pipeline.make_graphics_pipeline(
+        let (pipeline, renderpass, pipeline_layout) = self.shader_pipeline.make_graphics_pipeline(
             device,
             &self.scissors,
             &self.viewports,
@@ -168,6 +223,7 @@ impl Renderer for Orthographic {
         )?;
         self.renderpass = Some(renderpass);
         self.pipeline = Some(pipeline);
+        self.pipeline_layout = Some(pipeline_layout);
         self.image_views = images
             .iter()
             .map(|&image| {
@@ -195,7 +251,7 @@ impl Renderer for Orthographic {
             .image_views
             .iter()
             .map(|&view| {
-                let framebuffer_attachments = [view,/* base.depth_image_view*/];
+                let framebuffer_attachments = [view /* base.depth_image_view*/];
                 let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(renderpass)
                     .attachments(&framebuffer_attachments)
@@ -218,6 +274,27 @@ impl Renderer for Orthographic {
 
     fn graphics_pipeline(&self) -> Option<&ShaderPipeline> {
         Some(&self.shader_pipeline)
+    }
+
+    fn process_event(&mut self, event: &winit::event::WindowEvent) {
+        let mut handled = true;
+        match event {
+            WindowEvent::MouseWheel { delta, .. } => match delta {
+                winit::event::MouseScrollDelta::LineDelta(_h, v) => self.zoom += 0.1 * v,
+                winit::event::MouseScrollDelta::PixelDelta(_) => (),
+            },
+            WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
+                Some(winit::event::VirtualKeyCode::Left) => self.rotation += 5.0,
+                Some(winit::event::VirtualKeyCode::Right) => self.rotation -= 5.0,
+                Some(winit::event::VirtualKeyCode::Down) => self.zoom += 0.1,
+                Some(winit::event::VirtualKeyCode::Up) => self.zoom -= 0.1,
+                _ => handled = false,
+            },
+            _ => handled = false,
+        }
+        if handled {
+            self.update_push_constants();
+        }
     }
 }
 

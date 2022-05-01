@@ -26,6 +26,7 @@ mod device_mesh;
 mod mesh;
 mod renderers;
 mod shader;
+mod uniforms;
 mod vulkan_app;
 
 #[derive(clap::Parser)]
@@ -86,6 +87,8 @@ fn main() -> anyhow::Result<()> {
     let mut active_drawer_idx = 0;
     let mut last_switch = Instant::now();
 
+    //let mut projection_matrix =
+
     // original vulkan_app must be destroyed after event loop
     let vulkan_app_clone = Rc::clone(&vulkan_app);
 
@@ -99,73 +102,82 @@ fn main() -> anyhow::Result<()> {
         let mut vulkan_app_clone = vulkan_app_clone.borrow_mut();
 
         match event {
-            Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
-                WindowEvent::CloseRequested => exit(),
-                WindowEvent::Resized(size) => {
-                    debug!("Resized: {size:?}");
-                    vulkan_app_clone.resize(size);
-                    // Do one draw call to rebuild swapchain
-                    if let Err(err) = vulkan_app_clone.draw(
-                        |_device,
-                         _cmd,
-                         _image,
-                         _instant,
-                         _swapchain_idx|
-                         -> Result<(), anyhow::Error> { Ok(()) },
-                    ) {
-                        fail(err);
-                    };
-                    // Set resolution for renderers with new swapchain images
-                    for r in renderers.iter_mut() {
-                        if let Err(err) = r.set_resolution(
-                            vulkan_app_clone.device(),
-                            vulkan_app_clone.surface_format(),
-                            vk::Extent2D {
-                                width: size.width,
-                                height: size.height,
-                            },
-                            vulkan_app_clone.images(),
-                        ) {
-                            fail(err)
-                        };
-                    }
+            Event::WindowEvent { event, window_id } if window_id == window.id() => {
+                for r in renderers.iter_mut() {
+                    r.process_event(&event);
                 }
-                WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
-                    Some(winit::event::VirtualKeyCode::Escape) => {
-                        exit();
-                    }
-                    Some(winit::event::VirtualKeyCode::F | winit::event::VirtualKeyCode::F11) => {
-                        if (Instant::now() - last_switch) > Duration::from_millis(500) {
-                            last_switch = Instant::now();
-                            window.set_fullscreen(if window.fullscreen().is_some() {
-                                None
-                            } else {
-                                Some(Fullscreen::Borderless(None))
-                            })
+                match event {
+                    WindowEvent::CloseRequested => exit(),
+                    WindowEvent::Resized(size) => {
+                        debug!("Resized: {size:?}");
+                        vulkan_app_clone.resize(size);
+                        // Do one draw call to rebuild swapchain
+                        if let Err(err) = vulkan_app_clone.draw(
+                            |_device,
+                             _cmd,
+                             _image,
+                             _instant,
+                             _swapchain_idx|
+                             -> Result<(), anyhow::Error> { Ok(()) },
+                        ) {
+                            fail(err);
+                        };
+                        // Set resolution for renderers with new swapchain images
+                        for r in renderers.iter_mut() {
+                            if let Err(err) = r.set_resolution(
+                                vulkan_app_clone.device(),
+                                vulkan_app_clone.surface_format(),
+                                vk::Extent2D {
+                                    width: size.width,
+                                    height: size.height,
+                                },
+                                vulkan_app_clone.images(),
+                            ) {
+                                fail(err)
+                            };
                         }
                     }
-                    Some(
-                        winit::event::VirtualKeyCode::Numpad1 | winit::event::VirtualKeyCode::Key1,
-                    ) => {
-                        active_drawer_idx = 0;
-                        info!(
-                            "Switched Drawer to {active_drawer_idx}: {:?}",
-                            renderers[active_drawer_idx]
-                        );
-                    }
-                    Some(
-                        winit::event::VirtualKeyCode::Numpad2 | winit::event::VirtualKeyCode::Key2,
-                    ) => {
-                        active_drawer_idx = 1;
-                        info!(
-                            "Switched Drawer to {active_drawer_idx}: {:?}",
-                            renderers[active_drawer_idx]
-                        );
-                    }
+                    WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
+                        Some(winit::event::VirtualKeyCode::Escape) => {
+                            exit();
+                        }
+                        Some(
+                            winit::event::VirtualKeyCode::F | winit::event::VirtualKeyCode::F11,
+                        ) => {
+                            if (Instant::now() - last_switch) > Duration::from_millis(500) {
+                                last_switch = Instant::now();
+                                window.set_fullscreen(if window.fullscreen().is_some() {
+                                    None
+                                } else {
+                                    Some(Fullscreen::Borderless(None))
+                                })
+                            }
+                        }
+                        Some(
+                            winit::event::VirtualKeyCode::Numpad1
+                            | winit::event::VirtualKeyCode::Key1,
+                        ) => {
+                            active_drawer_idx = 0;
+                            info!(
+                                "Switched Drawer to {active_drawer_idx}: {:?}",
+                                renderers[active_drawer_idx]
+                            );
+                        }
+                        Some(
+                            winit::event::VirtualKeyCode::Numpad2
+                            | winit::event::VirtualKeyCode::Key2,
+                        ) => {
+                            active_drawer_idx = 1;
+                            info!(
+                                "Switched Drawer to {active_drawer_idx}: {:?}",
+                                renderers[active_drawer_idx]
+                            );
+                        }
+                        _ => (),
+                    },
                     _ => (),
-                },
-                _ => (),
-            },
+                }
+            }
             Event::MainEventsCleared => {
                 if let Err(err) = vulkan_app_clone.draw(
                     |device, cmd, image, instant, swapchain_idx| -> Result<(), anyhow::Error> {

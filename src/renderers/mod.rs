@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use ash::vk::{self, SurfaceFormatKHR};
 use enum_dispatch::enum_dispatch;
+use winit::event::WindowEvent;
 
 use crate::device_mesh::DeviceMesh;
 use crate::shader::ShaderPipeline;
@@ -39,6 +40,8 @@ pub trait Renderer {
     fn graphics_pipeline(&self) -> Option<&ShaderPipeline> {
         None
     }
+
+    fn process_event(&mut self, event: &WindowEvent) {}
 }
 
 #[enum_dispatch(Renderer)]

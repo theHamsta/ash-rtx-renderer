@@ -54,7 +54,7 @@ impl ShaderPipeline {
         surface_format: vk::SurfaceFormatKHR,
         vertex_input_attribute_descriptions: &[VertexInputAttributeDescription],
         vertex_input_binding_descriptions: &[VertexInputBindingDescription],
-    ) -> anyhow::Result<(vk::Pipeline, vk::RenderPass)> {
+    ) -> anyhow::Result<(vk::Pipeline, vk::RenderPass, vk::PipelineLayout)> {
         let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
         let shader_stage_create_infos = self
             .shaders
@@ -194,6 +194,7 @@ impl ShaderPipeline {
             }
             .map_err(|(_pipes, err)| err)?[0],
             renderpass,
+            pipeline_layout,
         ))
     }
 }
