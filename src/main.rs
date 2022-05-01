@@ -3,6 +3,7 @@ use ash::vk;
 use device_mesh::DeviceMesh;
 use log::{debug, error, info, warn};
 use std::{
+    cell::RefCell,
     path::PathBuf,
     rc::Rc,
     time::{Duration, Instant},
@@ -61,9 +62,8 @@ fn main() -> anyhow::Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_position(winit::dpi::PhysicalPosition::new(1300, 800))
-        .build(&event_loop)
-        .unwrap();
-    let mut vulkan_app = VulkanApp::new(&window)?;
+        .build(&event_loop)?;
+    let vulkan_app = Rc::new(RefCell::new(VulkanApp::new(&window)?));
 
     let mut renderers = vec![
         RendererImpl::ColorSine(ColorSine::default()),
@@ -72,6 +72,7 @@ fn main() -> anyhow::Result<()> {
     let meshes = meshes
         .iter()
         .map(|mesh| {
+            let vulkan_app = vulkan_app.borrow();
             Ok(Rc::new(DeviceMesh::new(
                 vulkan_app.device(),
                 vulkan_app.device_memory_properties(),
@@ -85,6 +86,9 @@ fn main() -> anyhow::Result<()> {
     let mut active_drawer_idx = 0;
     let mut last_switch = Instant::now();
 
+    // original vulkan_app must be destroyed after event loop
+    let vulkan_app_clone = Rc::clone(&vulkan_app);
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         let mut exit = || *control_flow = ControlFlow::Exit;
@@ -92,32 +96,35 @@ fn main() -> anyhow::Result<()> {
             error!("{err:?}");
             exit();
         };
+        let mut vulkan_app_clone = vulkan_app_clone.borrow_mut();
 
         match event {
             Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
                 WindowEvent::CloseRequested => exit(),
                 WindowEvent::Resized(size) => {
                     debug!("Resized: {size:?}");
-                    vulkan_app.resize(size);
+                    vulkan_app_clone.resize(size);
                     // Do one draw call to rebuild swapchain
-                    if let Err(err) = vulkan_app.draw(
-                        |_device, _cmd, _image, _instant, _swapchain_idx| -> Result<(), anyhow::Error> {
-                            Ok(())
-                        },
+                    if let Err(err) = vulkan_app_clone.draw(
+                        |_device,
+                         _cmd,
+                         _image,
+                         _instant,
+                         _swapchain_idx|
+                         -> Result<(), anyhow::Error> { Ok(()) },
                     ) {
-                        renderers.drain(..);
                         fail(err);
                     };
                     // Set resolution for renderers with new swapchain images
                     for r in renderers.iter_mut() {
                         if let Err(err) = r.set_resolution(
-                            vulkan_app.device(),
-                            vulkan_app.surface_format(),
+                            vulkan_app_clone.device(),
+                            vulkan_app_clone.surface_format(),
                             vk::Extent2D {
                                 width: size.width,
                                 height: size.height,
                             },
-                            vulkan_app.images(),
+                            vulkan_app_clone.images(),
                         ) {
                             fail(err)
                         };
@@ -125,7 +132,6 @@ fn main() -> anyhow::Result<()> {
                 }
                 WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
                     Some(winit::event::VirtualKeyCode::Escape) => {
-                        renderers.drain(..);
                         exit();
                     }
                     Some(winit::event::VirtualKeyCode::F | winit::event::VirtualKeyCode::F11) => {
@@ -161,7 +167,7 @@ fn main() -> anyhow::Result<()> {
                 _ => (),
             },
             Event::MainEventsCleared => {
-                if let Err(err) = vulkan_app.draw(
+                if let Err(err) = vulkan_app_clone.draw(
                     |device, cmd, image, instant, swapchain_idx| -> Result<(), anyhow::Error> {
                         if !renderers.is_empty() {
                             renderers[active_drawer_idx].draw(
@@ -176,7 +182,6 @@ fn main() -> anyhow::Result<()> {
                         }
                     },
                 ) {
-                    renderers.drain(..);
                     fail(err)
                 }
             }
