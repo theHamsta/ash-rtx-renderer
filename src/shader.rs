@@ -62,6 +62,7 @@ impl<'device> ShaderPipeline<'device> {
         surface_format: vk::SurfaceFormatKHR,
         vertex_input_attribute_descriptions: &[VertexInputAttributeDescription],
         vertex_input_binding_descriptions: &[VertexInputBindingDescription],
+        push_constant_ranges: &[vk::PushConstantRange],
     ) -> anyhow::Result<(vk::Pipeline, vk::RenderPass, vk::PipelineLayout)> {
         let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
         let shader_stage_create_infos = self
@@ -146,6 +147,7 @@ impl<'device> ShaderPipeline<'device> {
                 samples: vk::SampleCountFlags::TYPE_1,
                 load_op: vk::AttachmentLoadOp::CLEAR,
                 store_op: vk::AttachmentStoreOp::STORE,
+                initial_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 ..Default::default()
             },
@@ -178,7 +180,7 @@ impl<'device> ShaderPipeline<'device> {
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
 
-        let layout_create_info = vk::PipelineLayoutCreateInfo::default();
+        let layout_create_info = vk::PipelineLayoutCreateInfo::default().push_constant_ranges(push_constant_ranges);
 
         let pipeline_layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
         Ok((

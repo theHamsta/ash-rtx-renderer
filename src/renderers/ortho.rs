@@ -1,8 +1,7 @@
-#[warn(unused_unsafe)]
 use crate::mesh::Position;
 use std::{mem::size_of, mem::transmute, rc::Rc, time::Instant};
 
-use ash::vk;
+use ash::vk::{self, ShaderStageFlags};
 use cgmath::Vector4;
 use log::{debug, trace};
 use winit::event::WindowEvent;
@@ -240,6 +239,10 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
             surface_format,
             &vertex_attribute_desc,
             &vertex_binding_desc,
+            &[vk::PushConstantRange::default()
+                .offset(0)
+                .size(size_of::<PushConstants>().try_into()?)
+                .stage_flags(ShaderStageFlags::VERTEX)],
         )?;
         self.renderpass = Some(renderpass);
         self.pipeline = Some(pipeline);
