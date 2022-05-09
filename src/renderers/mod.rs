@@ -15,15 +15,15 @@ use self::color_sine::ColorSine;
 use self::ortho::Orthographic;
 
 #[enum_dispatch]
-pub trait Renderer {
-    fn set_meshes(&mut self, _meshes: &[Rc<DeviceMesh>]) {}
+pub trait Renderer<'device> {
+    fn set_meshes(&mut self, _meshes: &[Rc<DeviceMesh<'device>>]) {}
 
     fn set_resolution(
         &mut self,
-        _device: &Rc<ash::Device>,
         _surface_format: SurfaceFormatKHR,
         _size: vk::Extent2D,
         _images: &[vk::Image],
+        _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -41,12 +41,12 @@ pub trait Renderer {
         None
     }
 
-    fn process_event(&mut self, event: &WindowEvent) {}
+    fn process_event(&mut self, _event: &WindowEvent) {}
 }
 
 #[enum_dispatch(Renderer)]
 #[derive(Debug)]
-pub enum RendererImpl {
+pub enum RendererImpl<'device> {
     ColorSine(ColorSine),
-    Orthographic(Orthographic),
+    Orthographic(Orthographic<'device>),
 }

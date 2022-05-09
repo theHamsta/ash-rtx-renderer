@@ -1,5 +1,5 @@
+use std::os::raw::c_char;
 use std::time::Instant;
-use std::{os::raw::c_char, rc::Rc};
 
 use anyhow::Context;
 use ash::{
@@ -32,7 +32,7 @@ pub struct VulkanApp {
     _entry: ash::Entry,
     graphics_queue: vk::Queue,
     start_instant: Instant,
-    device: Rc<ash::Device>,
+    device: ash::Device,
     swapchain: Swapchain,
     frames: Vec<Frame>,
     functions: Functions,
@@ -108,21 +108,19 @@ impl VulkanApp {
                 })
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
 
-            let device = Rc::new(
-                instance.create_device(
-                    physical_device,
-                    &vk::DeviceCreateInfo::default()
-                        .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
-                        .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
-                            .queue_family_index(queue_family_index)
-                            .queue_priorities(&[1.0])]),
-                    None,
-                )?,
-            );
+            let device = instance.create_device(
+                physical_device,
+                &vk::DeviceCreateInfo::default()
+                    .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
+                    .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
+                        .queue_family_index(queue_family_index)
+                        .queue_priorities(&[1.0])]),
+                None,
+            )?;
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let mut swapchain_options = ash_swapchain::Options::default();
-            swapchain_options.frames_in_flight(4);
+            swapchain_options.frames_in_flight(3);
             let size = window.inner_size();
             let swapchain = Swapchain::new(
                 &ash_swapchain::Functions {
@@ -268,7 +266,7 @@ impl VulkanApp {
 
     /// Get a reference to the vulkan app's device.
     #[must_use]
-    pub fn device(&self) -> &Rc<ash::Device> {
+    pub fn device(&self) -> &ash::Device {
         &self.device
     }
 

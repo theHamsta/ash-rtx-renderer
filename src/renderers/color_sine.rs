@@ -8,7 +8,7 @@ use super::Renderer;
 #[derive(Debug, Default)]
 pub struct ColorSine {}
 
-impl Renderer for ColorSine {
+impl<'device> Renderer<'device> for ColorSine {
     fn draw(
         &self,
         device: &ash::Device,

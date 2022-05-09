@@ -31,14 +31,14 @@ fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
-struct Buffer {
-    device: Rc<ash::Device>,
+struct Buffer<'device> {
+    device: &'device ash::Device,
     memory: vk::DeviceMemory,
     buffer: vk::Buffer,
     //buffer_view: vk::BufferView,
 }
 
-impl Drop for Buffer {
+impl Drop for Buffer<'_> {
     fn drop(&mut self) {
         unsafe {
             //self.device.destroy_buffer_view(self.buffer_view, None);
@@ -48,9 +48,9 @@ impl Drop for Buffer {
     }
 }
 
-impl Buffer {
+impl<'device> Buffer<'device> {
     fn new<T>(
-        device: &Rc<ash::Device>,
+        device: &'device ash::Device,
         mem_properties: &vk::PhysicalDeviceMemoryProperties,
         buffer_create_info: &vk::BufferCreateInfo,
         host_memory: Option<&[T]>,
@@ -85,7 +85,6 @@ impl Buffer {
                 device.unmap_memory(memory);
             }
             device.bind_buffer_memory(buffer, memory, 0)?;
-            let device = Rc::clone(device);
             Ok(Self {
                 device,
                 memory,
@@ -101,14 +100,14 @@ pub enum AttributeType {
     Index,
 }
 
-pub struct DeviceMesh {
+pub struct DeviceMesh<'device> {
     mesh: Rc<Mesh>,
-    buffers: HashMap<AttributeType, Buffer>,
+    buffers: HashMap<AttributeType, Buffer<'device>>,
 }
 
-impl DeviceMesh {
+impl<'device> DeviceMesh<'device> {
     pub fn new(
-        device: &Rc<ash::Device>,
+        device: &'device ash::Device,
         mem_properties: &vk::PhysicalDeviceMemoryProperties,
         mesh: &Rc<Mesh>,
     ) -> anyhow::Result<Self> {
@@ -145,13 +144,15 @@ impl DeviceMesh {
     }
 
     pub fn position(&self) -> Option<&vk::Buffer> {
-        self.buffers.get(&AttributeType::Position).map(|b| &b.buffer)
+        self.buffers
+            .get(&AttributeType::Position)
+            .map(|b| &b.buffer)
     }
 
     pub fn indices(&self) -> Option<&vk::Buffer> {
         self.buffers.get(&AttributeType::Index).map(|b| &b.buffer)
     }
-    
+
     pub fn num_triangles(&self) -> usize {
         self.mesh.num_triangles()
     }

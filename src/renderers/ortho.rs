@@ -1,4 +1,5 @@
 #[warn(unused_unsafe)]
+use crate::mesh::Position;
 use std::{mem::size_of, mem::transmute, rc::Rc, time::Instant};
 
 use ash::vk;
@@ -6,56 +7,81 @@ use cgmath::Vector4;
 use log::{debug, trace};
 use winit::event::WindowEvent;
 
-use crate::{
-    device_mesh::DeviceMesh, mesh::Position, shader::ShaderPipeline, uniforms::PushConstants,
-};
+use crate::{device_mesh::DeviceMesh, shader::ShaderPipeline, uniforms::PushConstants};
 
 use super::Renderer;
 
-pub struct Orthographic {
-    meshes: Vec<Rc<DeviceMesh>>,
+pub fn find_memorytype_index(
+    memory_req: &vk::MemoryRequirements,
+    memory_prop: &vk::PhysicalDeviceMemoryProperties,
+    flags: vk::MemoryPropertyFlags,
+) -> Option<u32> {
+    memory_prop.memory_types[..memory_prop.memory_type_count as _]
+        .iter()
+        .enumerate()
+        .find(|(index, memory_type)| {
+            (1 << index) & memory_req.memory_type_bits != 0
+                && memory_type.property_flags & flags == flags
+        })
+        .map(|(index, _memory_type)| index as _)
+}
+
+pub struct Orthographic<'device> {
+    meshes: Vec<Rc<DeviceMesh<'device>>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
     image_views: Vec<vk::ImageView>,
     framebuffers: Vec<vk::Framebuffer>,
-    device: Option<Rc<ash::Device>>,
+    device: &'device ash::Device,
     renderpass: Option<vk::RenderPass>,
-    shader_pipeline: ShaderPipeline,
+    shader_pipeline: ShaderPipeline<'device>,
     pipeline: Option<vk::Pipeline>,
     pipeline_layout: Option<vk::PipelineLayout>,
     resolution: vk::Rect2D,
+    depth_image: vk::Image,
+    depth_image_view: vk::ImageView,
+    depth_image_memory: vk::DeviceMemory,
     uniforms: Option<PushConstants>,
     size: vk::Extent2D,
     zoom: f32,
     rotation: f32,
 }
 
-impl Default for Orthographic {
-    fn default() -> Self {
-        Self {
+impl<'device> Orthographic<'device> {
+    pub fn new(device: &'device ash::Device) -> anyhow::Result<Self> {
+        Ok(Self {
             zoom: 1.0,
             meshes: Default::default(),
             viewports: Default::default(),
             scissors: Default::default(),
             image_views: Default::default(),
             framebuffers: Default::default(),
-            device: Default::default(),
+            device,
             renderpass: Default::default(),
-            shader_pipeline: Default::default(),
+            shader_pipeline: ShaderPipeline::new(
+                device,
+                &[
+                    &include_bytes!("../../shaders/triangle.vert.spirv")[..],
+                    &include_bytes!("../../shaders/triangle.frag.spirv")[..],
+                ],
+            )?,
             pipeline: Default::default(),
             pipeline_layout: Default::default(),
             resolution: Default::default(),
+            depth_image: Default::default(),
+            depth_image_view: Default::default(),
+            depth_image_memory: Default::default(),
             uniforms: None,
             size: vk::Extent2D {
                 width: 0,
                 height: 0,
             },
             rotation: 0.0,
-        }
+        })
     }
 }
 
-impl std::fmt::Debug for Orthographic {
+impl std::fmt::Debug for Orthographic<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Orthographic")
             .field("viewports", &self.viewports)
@@ -66,20 +92,19 @@ impl std::fmt::Debug for Orthographic {
     }
 }
 
-impl Orthographic {
+impl<'device> Orthographic<'device> {
     fn destroy_images(&mut self) {
         unsafe {
-            if let Some(device) = &self.device {
-                device.device_wait_idle().unwrap();
-            }
+            let device = self.device;
+            device.device_wait_idle().unwrap();
+            device.destroy_image(self.depth_image, None);
+            device.destroy_image_view(self.depth_image_view, None);
+            device.free_memory(self.depth_image_memory, None);
             for img in self.image_views.iter() {
-                self.device.as_ref().unwrap().destroy_image_view(*img, None);
+                device.destroy_image_view(*img, None);
             }
             for img in self.framebuffers.iter() {
-                self.device
-                    .as_ref()
-                    .unwrap()
-                    .destroy_framebuffer(*img, None);
+                device.destroy_framebuffer(*img, None);
             }
         }
     }
@@ -93,10 +118,10 @@ impl Orthographic {
     }
 }
 
-impl Renderer for Orthographic {
+impl<'device> Renderer<'device> for Orthographic<'device> {
     fn draw(
         &self,
-        device: &ash::Device,
+        _device: &ash::Device,
         cmd: vk::CommandBuffer,
         _image: vk::Image,
         _start_instant: Instant,
@@ -110,12 +135,12 @@ impl Renderer for Orthographic {
                         float32: [0.0, 0.0, 0.0, 0.0],
                     },
                 },
-                //vk::ClearValue {
-                //depth_stencil: vk::ClearDepthStencilValue {
-                //depth: 1.0,
-                //stencil: 0,
-                //},
-                //},
+                vk::ClearValue {
+                    depth_stencil: vk::ClearDepthStencilValue {
+                        depth: 1.0,
+                        stencil: 0,
+                    },
+                },
             ];
             if let Some(pipeline) = self.pipeline {
                 let render_pass_begin_info = vk::RenderPassBeginInfo::default()
@@ -128,16 +153,17 @@ impl Renderer for Orthographic {
                     .clear_values(&clear_values);
                 trace!("{render_pass_begin_info:?}");
                 unsafe {
-                    device.cmd_begin_render_pass(
+                    self.device.cmd_begin_render_pass(
                         cmd,
                         &render_pass_begin_info,
                         vk::SubpassContents::INLINE,
                     );
-                    device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
-                    device.cmd_set_viewport(cmd, 0, &self.viewports);
-                    device.cmd_set_scissor(cmd, 0, &self.scissors);
+                    self.device
+                        .cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
+                    self.device.cmd_set_viewport(cmd, 0, &self.viewports);
+                    self.device.cmd_set_scissor(cmd, 0, &self.scissors);
 
-                    device.cmd_push_constants(
+                    self.device.cmd_push_constants(
                         cmd,
                         self.pipeline_layout.unwrap(),
                         vk::ShaderStageFlags::VERTEX,
@@ -146,6 +172,7 @@ impl Renderer for Orthographic {
                             self.uniforms.unwrap(),
                         ),
                     );
+                    let device = self.device;
                     for mesh in self.meshes.iter() {
                         device.cmd_bind_vertex_buffers(
                             cmd,
@@ -169,28 +196,22 @@ impl Renderer for Orthographic {
         Ok(())
     }
 
-    fn set_meshes(&mut self, meshes: &[Rc<DeviceMesh>]) {
+    fn set_meshes(&mut self, meshes: &[Rc<DeviceMesh<'device>>]) {
         self.meshes = meshes.to_vec();
     }
 
     fn set_resolution(
         &mut self,
-        device: &Rc<ash::Device>,
         surface_format: ash::vk::SurfaceFormatKHR,
         size: vk::Extent2D,
         images: &[vk::Image],
+        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
     ) -> anyhow::Result<()> {
+        let device = self.device;
         debug!("Set resolution: {size:?} images: {images:?}");
         self.destroy_images();
         self.size = size;
         self.update_push_constants();
-        self.shader_pipeline = ShaderPipeline::new(
-            device,
-            &[
-                &include_bytes!("../../shaders/triangle.vert.spirv")[..],
-                &include_bytes!("../../shaders/triangle.frag.spirv")[..],
-            ],
-        )?;
 
         self.viewports = vec![vk::Viewport {
             x: 0.0,
@@ -246,11 +267,59 @@ impl Renderer for Orthographic {
                 unsafe { device.create_image_view(&create_view_info, None).unwrap() }
             })
             .collect();
+
+        let depth_image_create_info = vk::ImageCreateInfo::default()
+            .image_type(vk::ImageType::TYPE_2D)
+            .format(vk::Format::D16_UNORM)
+            .extent(vk::Extent3D {
+                width: size.width,
+                height: size.height,
+                depth: 1,
+            })
+            .mip_levels(1)
+            .array_layers(1)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        self.depth_image = unsafe { device.create_image(&depth_image_create_info, None)? };
+
+        self.depth_image_memory = unsafe {
+            let depth_image_memory_req = device.get_image_memory_requirements(self.depth_image);
+            let depth_image_memory_index = find_memorytype_index(
+                &depth_image_memory_req,
+                device_memory_properties,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )
+            .ok_or_else(|| anyhow::anyhow!("Could not find memory index for depth buffer"))?;
+            let depth_image_allocate_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(depth_image_memory_req.size)
+                .memory_type_index(depth_image_memory_index);
+
+            device.allocate_memory(&depth_image_allocate_info, None)?
+        };
+        unsafe { device.bind_image_memory(self.depth_image, self.depth_image_memory, 0)? };
+        self.depth_image_view = unsafe {
+            let depth_image_view_info = vk::ImageViewCreateInfo::default()
+                .subresource_range(
+                    vk::ImageSubresourceRange::default()
+                        .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                        .level_count(1)
+                        .layer_count(1),
+                )
+                .image(self.depth_image)
+                .format(depth_image_create_info.format)
+                .view_type(vk::ImageViewType::TYPE_2D);
+
+            device.create_image_view(&depth_image_view_info, None)?
+        };
+
         self.framebuffers = self
             .image_views
             .iter()
             .map(|&view| {
-                let framebuffer_attachments = [view /* base.depth_image_view*/];
+                let framebuffer_attachments = [view, self.depth_image_view];
                 let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(renderpass)
                     .attachments(&framebuffer_attachments)
@@ -266,7 +335,6 @@ impl Renderer for Orthographic {
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        self.device = Some(Rc::clone(device));
         self.resolution = size.into();
         Ok(())
     }
@@ -297,7 +365,7 @@ impl Renderer for Orthographic {
     }
 }
 
-impl Drop for Orthographic {
+impl Drop for Orthographic<'_> {
     fn drop(&mut self) {
         self.destroy_images();
     }

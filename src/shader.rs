@@ -11,13 +11,21 @@ pub struct Shader {
     info: spirv_reflect::ShaderModule,
 }
 
-#[derive(Default)]
-pub struct ShaderPipeline {
+pub struct ShaderPipeline<'device> {
     shaders: Vec<Shader>,
+    device: &'device ash::Device,
 }
 
-impl ShaderPipeline {
-    pub fn new(device: &ash::Device, shader_bytes: &[&[u8]]) -> anyhow::Result<Self> {
+impl Drop for ShaderPipeline<'_> {
+    fn drop(&mut self) {
+        for s in self.shaders.iter() {
+            unsafe { self.device.destroy_shader_module(s.module, None) };
+        }
+    }
+}
+
+impl<'device> ShaderPipeline<'device> {
+    pub fn new(device: &'device ash::Device, shader_bytes: &[&[u8]]) -> anyhow::Result<Self> {
         let mut shaders = Vec::new();
         for &bytes in shader_bytes {
             let info = spirv_reflect::ShaderModule::load_u8_data(bytes)
@@ -43,7 +51,7 @@ impl ShaderPipeline {
                 //alt_info,
             });
         }
-        Ok(Self { shaders })
+        Ok(Self { shaders, device })
     }
 
     pub fn make_graphics_pipeline(
@@ -84,22 +92,22 @@ impl ShaderPipeline {
             rasterization_samples: vk::SampleCountFlags::TYPE_1,
             ..Default::default()
         };
-        //let noop_stencil_state = vk::StencilOpState {
-            //fail_op: vk::StencilOp::KEEP,
-            //pass_op: vk::StencilOp::KEEP,
-            //depth_fail_op: vk::StencilOp::KEEP,
-            //compare_op: vk::CompareOp::ALWAYS,
-            //..Default::default()
-        //};
-        //let depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
-            //depth_test_enable: 1,
-            //depth_write_enable: 1,
-            //depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
-            //front: noop_stencil_state,
-            //back: noop_stencil_state,
-            //max_depth_bounds: 1.0,
-            //..Default::default()
-        //};
+        let noop_stencil_state = vk::StencilOpState {
+            fail_op: vk::StencilOp::KEEP,
+            pass_op: vk::StencilOp::KEEP,
+            depth_fail_op: vk::StencilOp::KEEP,
+            compare_op: vk::CompareOp::ALWAYS,
+            ..Default::default()
+        };
+        let depth_state_info = vk::PipelineDepthStencilStateCreateInfo {
+            depth_test_enable: 1,
+            depth_write_enable: 1,
+            depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+            front: noop_stencil_state,
+            back: noop_stencil_state,
+            max_depth_bounds: 1.0,
+            ..Default::default()
+        };
         let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
             blend_enable: 0,
             src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
@@ -122,14 +130,14 @@ impl ShaderPipeline {
             attachment: 0,
             layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         }];
-        //let depth_attachment_ref = vk::AttachmentReference {
-            //attachment: 1,
-            //layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        //};
+        let depth_attachment_ref = vk::AttachmentReference {
+            attachment: 1,
+            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        };
 
         let subpass = vk::SubpassDescription::default()
             .color_attachments(&color_attachment_refs)
-            //.depth_stencil_attachment(&depth_attachment_ref)
+            .depth_stencil_attachment(&depth_attachment_ref)
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
 
         let renderpass_attachments = [
@@ -141,14 +149,14 @@ impl ShaderPipeline {
                 final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 ..Default::default()
             },
-            //vk::AttachmentDescription {
-                //format: vk::Format::D16_UNORM,
-                //samples: vk::SampleCountFlags::TYPE_1,
-                //load_op: vk::AttachmentLoadOp::CLEAR,
-                //initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                //final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                //..Default::default()
-            //},
+            vk::AttachmentDescription {
+                format: vk::Format::D16_UNORM,
+                samples: vk::SampleCountFlags::TYPE_1,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                ..Default::default()
+            },
         ];
 
         let dependencies = [vk::SubpassDependency {
@@ -184,7 +192,7 @@ impl ShaderPipeline {
                         .viewport_state(&viewport_state_info)
                         .rasterization_state(&rasterization_info)
                         .multisample_state(&multisample_state_info)
-                        //.depth_stencil_state(&depth_state_info)
+                        .depth_stencil_state(&depth_state_info)
                         .color_blend_state(&color_blend_state)
                         .dynamic_state(&dynamic_state_info)
                         .layout(pipeline_layout)
