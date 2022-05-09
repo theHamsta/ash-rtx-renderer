@@ -84,6 +84,10 @@ fn main() -> anyhow::Result<()> {
     for r in renderers.iter_mut() {
         r.set_meshes(&meshes);
     }
+    // Everything not moved into the event loop will not be dropped. So let renderers keep
+    // references and drop manually here
+    drop(meshes);
+
     let mut active_drawer_idx = 0;
     let mut last_switch = Instant::now();
 
