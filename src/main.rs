@@ -2,6 +2,7 @@ use anyhow::Error;
 use ash::vk;
 use device_mesh::DeviceMesh;
 use log::{debug, error, info, warn};
+use renderers::RenderStyle;
 use std::{
     path::PathBuf,
     rc::Rc,
@@ -98,6 +99,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut active_drawer_idx = 0;
     let mut last_switch = Instant::now();
+    let mut render_style = RenderStyle::Normal;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -144,6 +146,7 @@ fn main() -> anyhow::Result<()> {
                                 },
                                 vulkan_app.images(),
                                 vulkan_app.device_memory_properties(),
+                                render_style,
                             ) {
                                 fail(err)
                             };
@@ -184,6 +187,42 @@ fn main() -> anyhow::Result<()> {
                                 "Switched Drawer to {active_drawer_idx}: {:?}",
                                 renderers[active_drawer_idx]
                             );
+                        }
+                        Some(winit::event::VirtualKeyCode::W) => {
+                            info!("Wireframe mode",);
+                            render_style = RenderStyle::Wireframe;
+                            for r in renderers.iter_mut() {
+                                if let Err(err) = r.set_resolution(
+                                    vulkan_app.surface_format(),
+                                    vk::Extent2D {
+                                        width: window.inner_size().width,
+                                        height: window.inner_size().height,
+                                    },
+                                    vulkan_app.images(),
+                                    vulkan_app.device_memory_properties(),
+                                    render_style,
+                                ) {
+                                    fail(err)
+                                };
+                            }
+                        }
+                        Some(winit::event::VirtualKeyCode::N) => {
+                            info!("Wireframe mode",);
+                            render_style = RenderStyle::Normal;
+                            for r in renderers.iter_mut() {
+                                if let Err(err) = r.set_resolution(
+                                    vulkan_app.surface_format(),
+                                    vk::Extent2D {
+                                        width: window.inner_size().width,
+                                        height: window.inner_size().height,
+                                    },
+                                    vulkan_app.images(),
+                                    vulkan_app.device_memory_properties(),
+                                    render_style,
+                                ) {
+                                    fail(err)
+                                };
+                            }
                         }
                         _ => (),
                     },

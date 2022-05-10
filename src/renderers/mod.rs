@@ -24,6 +24,7 @@ pub trait Renderer<'device> {
         _size: vk::Extent2D,
         _images: &[vk::Image],
         _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        _render_style: RenderStyle
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -45,9 +46,16 @@ pub trait Renderer<'device> {
     fn process_device_event(&mut self, _event: &DeviceEvent) {}
 }
 
+#[allow(clippy::large_enum_variant)]
 #[enum_dispatch(Renderer)]
 #[derive(Debug)]
 pub enum RendererImpl<'device> {
     ColorSine(ColorSine),
     Orthographic(Orthographic<'device>),
+}
+
+#[derive(Debug, Copy, Eq, PartialEq, Clone)]
+pub enum RenderStyle {
+    Normal,
+    Wireframe
 }

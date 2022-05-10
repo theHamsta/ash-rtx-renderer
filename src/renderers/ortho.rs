@@ -8,7 +8,7 @@ use winit::event::WindowEvent;
 
 use crate::{device_mesh::DeviceMesh, shader::ShaderPipeline, uniforms::PushConstants};
 
-use super::Renderer;
+use super::{RenderStyle, Renderer};
 
 pub fn find_memorytype_index(
     memory_req: &vk::MemoryRequirements,
@@ -244,6 +244,7 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
         size: vk::Extent2D,
         images: &[vk::Image],
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        render_style: RenderStyle,
     ) -> anyhow::Result<()> {
         let device = self.device;
         debug!("Set resolution: {size:?} images: {images:?}");
@@ -297,6 +298,7 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
                 .offset(0)
                 .size(size_of::<PushConstants>().try_into()?)
                 .stage_flags(ShaderStageFlags::VERTEX)],
+            render_style,
         )?;
         self.renderpass = Some(renderpass);
         self.pipeline = Some(pipeline);
@@ -401,6 +403,7 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
     }
 
     fn process_device_event(&mut self, event: &winit::event::DeviceEvent) {
+        #[allow(clippy::single_match)]
         match event {
             winit::event::DeviceEvent::MouseMotion { delta } => {
                 if self.middle_drag {

@@ -6,6 +6,8 @@ use ash::vk::{VertexInputAttributeDescription, VertexInputBindingDescription};
 use ash::{util::read_spv, vk};
 use log::debug;
 
+use crate::renderers::RenderStyle;
+
 pub struct Shader {
     module: vk::ShaderModule,
     info: spirv_reflect::ShaderModule,
@@ -63,6 +65,7 @@ impl<'device> ShaderPipeline<'device> {
         vertex_input_attribute_descriptions: &[VertexInputAttributeDescription],
         vertex_input_binding_descriptions: &[VertexInputBindingDescription],
         push_constant_ranges: &[vk::PushConstantRange],
+        render_style: RenderStyle,
     ) -> anyhow::Result<(vk::Pipeline, vk::RenderPass, vk::PipelineLayout)> {
         let shader_entry_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
         let shader_stage_create_infos = self
@@ -86,7 +89,10 @@ impl<'device> ShaderPipeline<'device> {
         let rasterization_info = vk::PipelineRasterizationStateCreateInfo {
             front_face: vk::FrontFace::COUNTER_CLOCKWISE,
             line_width: 1.0,
-            polygon_mode: vk::PolygonMode::FILL,
+            polygon_mode: match render_style {
+                RenderStyle::Normal => vk::PolygonMode::FILL,
+                RenderStyle::Wireframe => vk::PolygonMode::LINE,
+            },
             cull_mode: vk::CullModeFlags::BACK,
             ..Default::default()
         };
@@ -181,7 +187,8 @@ impl<'device> ShaderPipeline<'device> {
         let dynamic_state_info =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
 
-        let layout_create_info = vk::PipelineLayoutCreateInfo::default().push_constant_ranges(push_constant_ranges);
+        let layout_create_info =
+            vk::PipelineLayoutCreateInfo::default().push_constant_ranges(push_constant_ranges);
 
         let pipeline_layout = unsafe { device.create_pipeline_layout(&layout_create_info, None)? };
         Ok((
