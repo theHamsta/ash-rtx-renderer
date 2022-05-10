@@ -179,4 +179,10 @@ impl<'device> DeviceMesh<'device> {
     pub fn num_vertices(&self) -> usize {
         self.mesh.num_vertices()
     }
+
+    /// Get a reference to the device mesh's mesh.
+    #[must_use]
+    pub fn mesh(&self) -> &Mesh {
+        self.mesh.as_ref()
+    }
 }

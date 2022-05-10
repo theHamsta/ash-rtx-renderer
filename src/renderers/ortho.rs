@@ -2,7 +2,7 @@ use crate::mesh::{Normal, Position};
 use std::{mem::size_of, mem::transmute, rc::Rc, time::Instant};
 
 use ash::vk::{self, ShaderStageFlags};
-use cgmath::Vector4;
+use cgmath::{Point3, Vector3, Vector4};
 use log::{debug, trace};
 use winit::event::WindowEvent;
 
@@ -44,6 +44,7 @@ pub struct Orthographic<'device> {
     size: vk::Extent2D,
     zoom: f32,
     rotation: f32,
+    translation: Point3<f32>,
 }
 
 impl<'device> Orthographic<'device> {
@@ -64,6 +65,11 @@ impl<'device> Orthographic<'device> {
                     &include_bytes!("../../shaders/triangle.frag.spirv")[..],
                 ],
             )?,
+            translation: Point3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             pipeline: Default::default(),
             pipeline_layout: Default::default(),
             resolution: Default::default(),
@@ -110,6 +116,7 @@ impl<'device> Orthographic<'device> {
     fn update_push_constants(&mut self) {
         self.uniforms = Some(PushConstants::new(
             self.size,
+            self.translation,
             Vector4::new(2.0, 0.0, 0.0, 1.0),
             self.zoom,
             self.rotation,
@@ -209,6 +216,24 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
 
     fn set_meshes(&mut self, meshes: &[Rc<DeviceMesh<'device>>]) {
         self.meshes = meshes.to_vec();
+        self.translation = meshes
+            .iter()
+            .flat_map(|mesh| mesh.mesh().positions().iter())
+            .fold(
+                Point3 {
+                    x: 0.0f32,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                |i, &p| {
+                    i + Vector3 {
+                        x: p.x,
+                        y: p.y,
+                        z: p.z,
+                    }
+                },
+            )
+            / meshes.iter().map(|mesh| mesh.num_vertices()).sum::<usize>() as f32;
     }
 
     fn set_resolution(

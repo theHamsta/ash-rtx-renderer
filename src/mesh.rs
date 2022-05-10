@@ -5,16 +5,16 @@ use std::{os::unix::prelude::OsStrExt, path::Path};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Position {
-    x: f32,
-    y: f32,
-    z: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Normal {
-    x: f32,
-    y: f32,
-    z: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
