@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use ash::vk::{self, SurfaceFormatKHR};
 use enum_dispatch::enum_dispatch;
-use winit::event::WindowEvent;
+use winit::event::{DeviceEvent, WindowEvent};
 
 use crate::device_mesh::DeviceMesh;
 use crate::shader::ShaderPipeline;
@@ -41,7 +41,8 @@ pub trait Renderer<'device> {
         None
     }
 
-    fn process_event(&mut self, _event: &WindowEvent) {}
+    fn process_window_event(&mut self, _event: &WindowEvent) {}
+    fn process_device_event(&mut self, _event: &DeviceEvent) {}
 }
 
 #[enum_dispatch(Renderer)]

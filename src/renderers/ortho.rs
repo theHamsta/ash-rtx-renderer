@@ -45,6 +45,7 @@ pub struct Orthographic<'device> {
     zoom: f32,
     rotation: f32,
     translation: Point3<f32>,
+    middle_drag: bool,
 }
 
 impl<'device> Orthographic<'device> {
@@ -82,6 +83,7 @@ impl<'device> Orthographic<'device> {
                 height: 0,
             },
             rotation: 0.0,
+            middle_drag: false,
         })
     }
 }
@@ -398,9 +400,36 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
         Some(&self.shader_pipeline)
     }
 
-    fn process_event(&mut self, event: &winit::event::WindowEvent) {
+    fn process_device_event(&mut self, event: &winit::event::DeviceEvent) {
+        match event {
+            winit::event::DeviceEvent::MouseMotion { delta } => {
+                if self.middle_drag {
+                    self.translation -= Vector3 {
+                        x: self.rotation.cos() * delta.0 as f32,
+                        y: delta.1 as f32,
+                        z: self.rotation.sin() * delta.0 as f32,
+                    };
+                }
+            }
+            _ => (),
+        }
+    }
+    fn process_window_event(&mut self, event: &winit::event::WindowEvent) {
         let mut handled = true;
         match event {
+            WindowEvent::MouseInput { state, button, .. } => match (button, state) {
+                //(winit::event::MouseButton::Left, winit::event::ElementState::Pressed) => todo!(),
+                //(winit::event::MouseButton::Left, winit::event::ElementState::Released) => todo!(),
+                //(winit::event::MouseButton::Right, winit::event::ElementState::Pressed) => todo!(),
+                //(winit::event::MouseButton::Right, winit::event::ElementState::Released) => todo!(),
+                (winit::event::MouseButton::Middle, winit::event::ElementState::Pressed) => {
+                    self.middle_drag = true
+                }
+                (winit::event::MouseButton::Middle, winit::event::ElementState::Released) => {
+                    self.middle_drag = false
+                }
+                _ => (),
+            },
             WindowEvent::MouseWheel { delta, .. } => match delta {
                 winit::event::MouseScrollDelta::LineDelta(_h, v) => self.zoom += 0.1 * v,
                 winit::event::MouseScrollDelta::PixelDelta(_) => (),

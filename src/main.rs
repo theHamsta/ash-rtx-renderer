@@ -108,9 +108,15 @@ fn main() -> anyhow::Result<()> {
         };
 
         match event {
+            Event::DeviceEvent { event, .. } => {
+                for r in renderers.iter_mut() {
+                    r.process_device_event(&event);
+                }
+            }
+
             Event::WindowEvent { event, window_id } if window_id == window.id() => {
                 for r in renderers.iter_mut() {
-                    r.process_event(&event);
+                    r.process_window_event(&event);
                 }
                 match event {
                     WindowEvent::CloseRequested => exit(),
