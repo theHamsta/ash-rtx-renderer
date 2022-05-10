@@ -188,27 +188,16 @@ fn main() -> anyhow::Result<()> {
                                 renderers[active_drawer_idx]
                             );
                         }
-                        Some(winit::event::VirtualKeyCode::W) => {
+                        Some(
+                            code @ (winit::event::VirtualKeyCode::W
+                            | winit::event::VirtualKeyCode::N),
+                        ) => {
                             info!("Wireframe mode",);
-                            render_style = RenderStyle::Wireframe;
-                            for r in renderers.iter_mut() {
-                                if let Err(err) = r.set_resolution(
-                                    vulkan_app.surface_format(),
-                                    vk::Extent2D {
-                                        width: window.inner_size().width,
-                                        height: window.inner_size().height,
-                                    },
-                                    vulkan_app.images(),
-                                    vulkan_app.device_memory_properties(),
-                                    render_style,
-                                ) {
-                                    fail(err)
-                                };
-                            }
-                        }
-                        Some(winit::event::VirtualKeyCode::N) => {
-                            info!("Wireframe mode",);
-                            render_style = RenderStyle::Normal;
+                            render_style = match code {
+                                winit::event::VirtualKeyCode::W => RenderStyle::Wireframe,
+                                winit::event::VirtualKeyCode::N => RenderStyle::Normal,
+                                _ => unreachable!(),
+                            };
                             for r in renderers.iter_mut() {
                                 if let Err(err) = r.set_resolution(
                                     vulkan_app.surface_format(),
