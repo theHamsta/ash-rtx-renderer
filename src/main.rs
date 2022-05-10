@@ -34,6 +34,9 @@ struct Args {
     /// Mesh file to render
     #[clap(short, long)]
     mesh_file: Vec<PathBuf>,
+
+    #[clap(long)]
+    only_triangles: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -41,11 +44,16 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     let mut meshes = Vec::new();
-    for mesh in args
-        .mesh_file
-        .iter()
-        .map(|mesh| Mesh::from_file(&mesh, crate::mesh::ReadOptions::OnlyTriangles))
-    {
+    for mesh in args.mesh_file.iter().map(|mesh| {
+        Mesh::from_file(
+            &mesh,
+            if args.only_triangles {
+                crate::mesh::ReadOptions::OnlyTriangles
+            } else {
+                crate::mesh::ReadOptions::WithAttributes
+            },
+        )
+    }) {
         let mesh = mesh?;
         info!(
             "Loaded mesh with {} triangles and {} vertices. vertex_normals: {}.",
@@ -64,7 +72,7 @@ fn main() -> anyhow::Result<()> {
         .with_position(winit::dpi::PhysicalPosition::new(1300i32, 800))
         .build(&event_loop)?;
     let mut vulkan_app = VulkanApp::new(&window)?;
-    
+
     // Device must be 'static as it must outlive structs moved into eventloop referencing it
     let device = Box::leak(Box::new(vulkan_app.device().clone()));
 

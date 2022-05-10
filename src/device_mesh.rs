@@ -96,6 +96,7 @@ impl<'device> Buffer<'device> {
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum AttributeType {
+    Normals,
     Position,
     Index,
 }
@@ -124,6 +125,20 @@ impl<'device> DeviceMesh<'device> {
                 Some(mesh.positions()),
             )?,
         );
+        if let Some(vertex_normals) = mesh.vertex_normals() {
+            buffers.insert(
+                AttributeType::Normals,
+                Buffer::new(
+                    device,
+                    mem_properties,
+                    &vk::BufferCreateInfo::default()
+                        .size((3 * size_of::<f32>() * mesh.num_vertices()) as vk::DeviceSize)
+                        .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                    Some(vertex_normals),
+                )?,
+            );
+        }
         buffers.insert(
             AttributeType::Index,
             Buffer::new(
@@ -151,6 +166,10 @@ impl<'device> DeviceMesh<'device> {
 
     pub fn indices(&self) -> Option<&vk::Buffer> {
         self.buffers.get(&AttributeType::Index).map(|b| &b.buffer)
+    }
+
+    pub fn normals(&self) -> Option<&vk::Buffer> {
+        self.buffers.get(&AttributeType::Normals).map(|b| &b.buffer)
     }
 
     pub fn num_triangles(&self) -> usize {

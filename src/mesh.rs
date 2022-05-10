@@ -1,4 +1,6 @@
+use log::info;
 use ply_rs::ply;
+use std::mem::transmute;
 use std::{os::unix::prelude::OsStrExt, path::Path};
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -34,6 +36,45 @@ pub enum MeshIOError {
     NoFileExtension,
     #[error("Vertex attribute number does not agree with number of vertices: {0} attributes vs {1} vertices")]
     InvalidNumberOfVertexAttributes(usize, usize),
+}
+
+fn get_normals(mesh: &tri_mesh::mesh::Mesh) -> anyhow::Result<Vec<Normal>> {
+    let mut normals = Vec::with_capacity(mesh.no_vertices());
+    for v in mesh.vertex_iter() {
+        let vec = mesh.vertex_normal(v);
+        normals.push(Normal {
+            x: vec.x as f32,
+            y: vec.y as f32,
+            z: vec.z as f32,
+        });
+    }
+    Ok(normals)
+}
+
+fn get_positions(mesh: &tri_mesh::mesh::Mesh) -> Vec<Position> {
+    mesh.vertex_iter()
+        .map(|v| {
+            let pos = mesh.vertex_position(v);
+            Position {
+                x: pos.x as f32,
+                y: pos.y as f32,
+                z: pos.z as f32,
+            }
+        })
+        .collect()
+}
+
+fn get_indices(mesh: &tri_mesh::mesh::Mesh) -> Vec<Triangle> {
+    mesh.face_iter()
+        .map(|f| {
+            let (a, b, c) = mesh.face_vertices(f);
+            unsafe {
+                Triangle {
+                    indices: [transmute(a), transmute(b), transmute(c)],
+                }
+            }
+        })
+        .collect()
 }
 
 impl ply::PropertyAccess for Position {
@@ -114,6 +155,7 @@ impl Mesh {
     }
 
     fn from_ply(path: impl AsRef<Path>, options: ReadOptions) -> anyhow::Result<Self> {
+        info!("Reading {:?}", path.as_ref().to_str());
         let f = std::fs::File::open(&path)?;
         let mut f = std::io::BufReader::new(f);
 
@@ -170,7 +212,31 @@ impl Mesh {
                 let vertex_normals: Vec<_> = vertices.iter().flat_map(|v| v.normal).collect();
 
                 let vertex_normals = match (vertex_normals.len(), positions.len()) {
-                    (0, _) => Ok(None),
+                    (0, _) => Ok({
+                        let mesh = tri_mesh::mesh_builder::MeshBuilder::new()
+                            .with_positions(
+                                positions
+                                    .iter()
+                                    .flat_map(|p| [p.x as f64, p.y as f64, p.z as f64])
+                                    .collect(),
+                            )
+                            .with_indices(
+                                triangles
+                                    .iter()
+                                    .flat_map(|t| {
+                                        [
+                                            t.indices[0] as u32,
+                                            t.indices[1] as u32,
+                                            t.indices[2] as u32,
+                                        ]
+                                    })
+                                    .collect(),
+                            )
+                            .build()
+                            .map_err(|err| anyhow::anyhow!("Failed to calc normals: {err:?}"))?;
+
+                        Some(get_normals(&mesh)?)
+                    }),
                     (a, b) if a == b => Ok(Some(vertex_normals)),
                     (a, b) => {
                         anyhow::Result::Err(MeshIOError::InvalidNumberOfVertexAttributes(a, b))
@@ -186,6 +252,28 @@ impl Mesh {
         }
     }
 
+    fn from_obj(path: impl AsRef<Path>, options: ReadOptions) -> anyhow::Result<Self> {
+        info!("Reading {:?}", path.as_ref().to_str());
+        let obj_source = std::fs::read_to_string(path.as_ref())?;
+        let mesh = tri_mesh::mesh_builder::MeshBuilder::new()
+            .with_obj(obj_source)
+            .build()
+            .map_err(|err| anyhow::anyhow!("Failed to read obj: {err:?}"))?;
+
+        match options {
+            ReadOptions::OnlyTriangles => Ok(Mesh {
+                positions: get_positions(&mesh),
+                triangles: get_indices(&mesh),
+                vertex_normals: None,
+            }),
+            ReadOptions::WithAttributes => Ok(Mesh {
+                positions: get_positions(&mesh),
+                triangles: get_indices(&mesh),
+                vertex_normals: Some(get_normals(&mesh)?),
+            }),
+        }
+    }
+
     pub fn from_file(path: &impl AsRef<Path>, options: ReadOptions) -> anyhow::Result<Self> {
         let ext = path
             .as_ref()
@@ -193,6 +281,7 @@ impl Mesh {
             .ok_or(MeshIOError::NoFileExtension)?;
         match ext.as_bytes() {
             b"ply" | b"PLY" => Mesh::from_ply(path, options),
+            b"obj" | b"OBJ" => Mesh::from_obj(path, options),
             ext => Err(MeshIOError::UnsupportedMeshFileType(
                 String::from_utf8_lossy(ext).to_string(),
             )

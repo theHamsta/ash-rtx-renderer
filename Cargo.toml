@@ -28,6 +28,7 @@ cgmath = "0.18"
 #bytemuck = {version="1.9", features = ["derive"]}
 spirv-reflect = { git = "https://github.com/theHamsta/spirv-reflect-rs.git" }
 #egui-winit-ash-integration = { path = "../egui-winit-ash-integration" }
+tri-mesh="0.5.0"
 
 #rspirv-reflect = "0.7"
 # Nice additions

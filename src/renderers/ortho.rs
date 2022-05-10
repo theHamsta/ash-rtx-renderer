@@ -1,4 +1,4 @@
-use crate::mesh::Position;
+use crate::mesh::{Normal, Position};
 use std::{mem::size_of, mem::transmute, rc::Rc, time::Instant};
 
 use ash::vk::{self, ShaderStageFlags};
@@ -176,16 +176,28 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
                         device.cmd_bind_vertex_buffers(
                             cmd,
                             0,
-                            &[*mesh
-                                .position()
-                                .ok_or_else(|| anyhow::anyhow!("Mesh has no vertex positions"))?],
-                            &[0],
+                            &[
+                                *mesh.position().ok_or_else(|| {
+                                    anyhow::anyhow!("Mesh has no vertex positions")
+                                })?,
+                                *mesh
+                                    .normals()
+                                    .ok_or_else(|| anyhow::anyhow!("Mesh has no vertex normals"))?,
+                            ],
+                            &[0, 0],
                         );
                         if let Some(&idx_buffer) = mesh.indices() {
                             device.cmd_bind_index_buffer(cmd, idx_buffer, 0, vk::IndexType::UINT32);
-                            device.cmd_draw_indexed(cmd, mesh.num_triangles() as u32, 1, 0, 0, 1);
+                            device.cmd_draw_indexed(
+                                cmd,
+                                mesh.num_triangles() as u32 * 3,
+                                1,
+                                0,
+                                0,
+                                1,
+                            );
                         } else {
-                            device.cmd_draw(cmd, mesh.num_vertices() as u32, 1, 0, 0);
+                            device.cmd_draw(cmd, mesh.num_vertices() as u32 * 3, 1, 0, 0);
                         }
                     }
                     device.cmd_end_render_pass(cmd);
@@ -221,17 +233,32 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
             max_depth: 1.0,
         }];
         self.scissors = vec![size.into()];
-        let vertex_attribute_desc = [vk::VertexInputAttributeDescription {
-            location: 0,
-            binding: 0,
-            format: vk::Format::R32G32B32A32_SFLOAT,
-            offset: 0,
-        }];
-        let vertex_binding_desc = [vk::VertexInputBindingDescription {
-            binding: 0,
-            stride: std::mem::size_of::<Position>() as u32,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }];
+        let vertex_attribute_desc = [
+            vk::VertexInputAttributeDescription {
+                location: 0,
+                binding: 0,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: 0,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 1,
+                binding: 1,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: 0,
+            },
+        ];
+        let vertex_binding_desc = [
+            vk::VertexInputBindingDescription {
+                binding: 0,
+                stride: std::mem::size_of::<Position>() as u32,
+                input_rate: vk::VertexInputRate::VERTEX,
+            },
+            vk::VertexInputBindingDescription {
+                binding: 1,
+                stride: std::mem::size_of::<Normal>() as u32,
+                input_rate: vk::VertexInputRate::VERTEX,
+            },
+        ];
         let (pipeline, renderpass, pipeline_layout) = self.shader_pipeline.make_graphics_pipeline(
             device,
             &self.scissors,
