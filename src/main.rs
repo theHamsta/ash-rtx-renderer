@@ -153,7 +153,9 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                     WindowEvent::KeyboardInput { input, .. } => match input.virtual_keycode {
-                        Some(winit::event::VirtualKeyCode::Escape) => {
+                        Some(
+                            winit::event::VirtualKeyCode::Escape | winit::event::VirtualKeyCode::Q,
+                        ) => {
                             exit();
                         }
                         Some(
