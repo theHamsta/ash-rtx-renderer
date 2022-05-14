@@ -25,7 +25,7 @@ pub fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
-pub struct Orthographic<'device> {
+pub struct Raster<'device> {
     meshes: Vec<Rc<DeviceMesh<'device>>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
@@ -48,7 +48,7 @@ pub struct Orthographic<'device> {
     middle_drag: bool,
 }
 
-impl<'device> Orthographic<'device> {
+impl<'device> Raster<'device> {
     pub fn new(device: &'device ash::Device) -> anyhow::Result<Self> {
         Ok(Self {
             zoom: 1.0,
@@ -88,7 +88,7 @@ impl<'device> Orthographic<'device> {
     }
 }
 
-impl std::fmt::Debug for Orthographic<'_> {
+impl std::fmt::Debug for Raster<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Orthographic")
             .field("viewports", &self.viewports)
@@ -99,7 +99,7 @@ impl std::fmt::Debug for Orthographic<'_> {
     }
 }
 
-impl<'device> Orthographic<'device> {
+impl<'device> Raster<'device> {
     fn destroy_images(&mut self) {
         unsafe {
             let device = self.device;
@@ -126,7 +126,7 @@ impl<'device> Orthographic<'device> {
     }
 }
 
-impl<'device> Renderer<'device> for Orthographic<'device> {
+impl<'device> Renderer<'device> for Raster<'device> {
     fn draw(
         &self,
         _device: &ash::Device,
@@ -452,7 +452,7 @@ impl<'device> Renderer<'device> for Orthographic<'device> {
     }
 }
 
-impl Drop for Orthographic<'_> {
+impl Drop for Raster<'_> {
     fn drop(&mut self) {
         self.destroy_images();
     }

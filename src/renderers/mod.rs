@@ -1,5 +1,5 @@
 pub mod color_sine;
-pub mod ortho;
+pub mod raster;
 
 use std::rc::Rc;
 use std::time::Instant;
@@ -12,7 +12,7 @@ use crate::device_mesh::DeviceMesh;
 use crate::shader::ShaderPipeline;
 
 use self::color_sine::ColorSine;
-use self::ortho::Orthographic;
+use self::raster::Raster;
 
 #[enum_dispatch]
 pub trait Renderer<'device> {
@@ -24,7 +24,7 @@ pub trait Renderer<'device> {
         _size: vk::Extent2D,
         _images: &[vk::Image],
         _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
-        _render_style: RenderStyle
+        _render_style: RenderStyle,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -51,11 +51,11 @@ pub trait Renderer<'device> {
 #[derive(Debug)]
 pub enum RendererImpl<'device> {
     ColorSine(ColorSine),
-    Orthographic(Orthographic<'device>),
+    Raster(Raster<'device>),
 }
 
 #[derive(Debug, Copy, Eq, PartialEq, Clone)]
 pub enum RenderStyle {
     Normal,
-    Wireframe
+    Wireframe,
 }

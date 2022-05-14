@@ -18,7 +18,7 @@ use winit::{
 };
 
 use crate::{
-    renderers::{color_sine::ColorSine, ortho::Orthographic, Renderer, RendererImpl},
+    renderers::{color_sine::ColorSine, raster::Raster, Renderer, RendererImpl},
     vulkan_app::VulkanApp,
 };
 
@@ -77,9 +77,9 @@ fn main() -> anyhow::Result<()> {
     // Device must be 'static as it must outlive structs moved into eventloop referencing it
     let device = Box::leak(Box::new(vulkan_app.device().clone()));
 
-    let ortho = RendererImpl::Orthographic(Orthographic::new(device)?);
+    let raster = RendererImpl::Raster(Raster::new(device)?);
     let color_sine = RendererImpl::ColorSine(ColorSine::default());
-    let mut renderers = [ortho, color_sine];
+    let mut renderers = [raster, color_sine];
     let meshes = meshes
         .iter()
         .map(|mesh| {
