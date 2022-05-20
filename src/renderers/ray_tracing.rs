@@ -1,4 +1,7 @@
-use crate::mesh::{Normal, Position};
+use crate::{
+    acceleration_structure::AccelerationStructureData,
+    mesh::{Normal, Position},
+};
 use std::{mem::size_of, rc::Rc, time::Instant};
 
 use ash::vk::{self, ShaderStageFlags};
@@ -25,7 +28,7 @@ pub fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
-pub struct RayTrace<'device> {
+pub struct RayTrace<'device, 'ac> {
     meshes: Vec<Rc<DeviceMesh<'device>>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
@@ -43,13 +46,13 @@ pub struct RayTrace<'device> {
     rotation: f32,
     translation: Point3<f32>,
     middle_drag: bool,
-    toplevel_as: Option<vk::AccelerationStructureKHR>,
-    bottomlevel_as: Vec<vk::AccelerationStructureKHR>,
+    toplevel_as: Option<AccelerationStructureData<'ac>>,
+    bottomlevel_as: Vec<AccelerationStructureData<'ac>>,
     raytracing_tracing_ext: ash::extensions::khr::RayTracingPipeline,
     acceleration_structure_ext: ash::extensions::khr::AccelerationStructure,
 }
 
-impl<'device> RayTrace<'device> {
+impl<'device, 'ac> RayTrace<'device, 'ac> {
     pub fn new(device: &'device ash::Device, instance: &ash::Instance) -> anyhow::Result<Self> {
         Ok(Self {
             zoom: 1.0,
@@ -92,7 +95,7 @@ impl<'device> RayTrace<'device> {
     }
 }
 
-impl std::fmt::Debug for RayTrace<'_> {
+impl std::fmt::Debug for RayTrace<'_,'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Orthographic")
             .field("viewports", &self.viewports)
@@ -103,21 +106,7 @@ impl std::fmt::Debug for RayTrace<'_> {
     }
 }
 
-impl<'device> RayTrace<'device> {
-    fn destroy_acceleration_structures(&mut self) {
-        unsafe {
-            let _ = self.device.device_wait_idle();
-            if let Some(acs) = self.toplevel_as {
-                self.acceleration_structure_ext
-                    .destroy_acceleration_structure(acs, None)
-            }
-            self.bottomlevel_as.drain(..).for_each(|acs| {
-                self.acceleration_structure_ext
-                    .destroy_acceleration_structure(acs, None)
-            });
-        }
-    }
-
+impl<'device> RayTrace<'device, '_> {
     fn destroy_images(&mut self) {
         unsafe {
             let device = self.device;
@@ -142,7 +131,7 @@ impl<'device> RayTrace<'device> {
     }
 }
 
-impl<'device> Renderer<'device> for RayTrace<'device> {
+impl<'device> Renderer<'device, '_> for RayTrace<'device, '_> {
     fn draw(
         &self,
         _device: &ash::Device,
@@ -156,9 +145,15 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         Ok(())
     }
 
-    fn set_meshes(&mut self, meshes: &[Rc<DeviceMesh<'device>>]) -> anyhow::Result<()> {
+    fn set_meshes(
+        &'device mut self,
+        meshes: &[Rc<DeviceMesh<'_>>],
+        cmd: vk::CommandBuffer,
+        graphics_queue: vk::Queue,
+        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+    ) -> anyhow::Result<()> {
         self.meshes = meshes.to_vec();
-        self.translation = meshes
+        self.translation = self.meshes
             .iter()
             .flat_map(|mesh| mesh.mesh().positions().iter())
             .fold(
@@ -176,28 +171,35 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 },
             )
             / meshes.iter().map(|mesh| mesh.num_vertices()).sum::<usize>() as f32;
-        self.destroy_acceleration_structures();
-        unsafe {
-            self.toplevel_as = Some(
-                self.acceleration_structure_ext
-                    .create_acceleration_structure(
-                        &vk::AccelerationStructureCreateInfoKHR::default()
-                            .ty(vk::AccelerationStructureTypeKHR::TOP_LEVEL),
-                        None,
-                    )?,
-            );
-            self.bottomlevel_as = meshes
-                .iter()
-                .flat_map(|m| {
-                    self.acceleration_structure_ext
-                        .create_acceleration_structure(
-                            &vk::AccelerationStructureCreateInfoKHR::default()
-                                .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL),
-                            None,
-                        )
-                })
-                .collect();
-        }
+        self.bottomlevel_as = self.meshes
+            .iter()
+            .flat_map(|m| {
+                AccelerationStructureData::build_bottomlevel(
+                    cmd,
+                    Rc::clone(m),
+                    device_memory_properties,
+                    &self.acceleration_structure_ext,
+                    graphics_queue,
+                )
+            })
+            .collect();
+        let translated_bl_as = self
+            .bottomlevel_as
+            .iter()
+            .map(|m| {
+                (
+                    m,
+                    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                )
+            })
+            .collect::<Vec<_>>();
+        self.toplevel_as = Some(AccelerationStructureData::build_toplevel(
+            cmd,
+            &translated_bl_as,
+            device_memory_properties,
+            &self.acceleration_structure_ext,
+            graphics_queue,
+        )?);
         Ok(())
     }
 
@@ -206,7 +208,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         surface_format: ash::vk::SurfaceFormatKHR,
         size: vk::Extent2D,
         images: &[vk::Image],
-        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
         render_style: RenderStyle,
     ) -> anyhow::Result<()> {
         let device = self.device;
@@ -369,9 +371,8 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
     }
 }
 
-impl Drop for RayTrace<'_> {
+impl Drop for RayTrace<'_, '_> {
     fn drop(&mut self) {
-        self.destroy_acceleration_structures();
         self.destroy_images();
     }
 }

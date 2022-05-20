@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use std::{mem::size_of, rc::Rc};
 
 use anyhow::Context;
 use ash::vk;
@@ -12,16 +12,17 @@ pub struct AccelerationStructureData<'device> {
     structure: vk::AccelerationStructureKHR,
     buffer: Buffer<'device>,
     handle: vk::DeviceAddress,
+    mesh: Option<Rc<DeviceMesh<'device>>>,
 }
 
 impl<'device> AccelerationStructureData<'device> {
-    fn build_bottomlevel(
+    pub fn build_bottomlevel(
         cmd: vk::CommandBuffer,
-        mesh: &'device DeviceMesh,
+        mesh: Rc<DeviceMesh<'device>>,
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
         as_extension: &ash::extensions::khr::AccelerationStructure,
         graphics_queue: vk::Queue,
-    ) -> anyhow::Result<AccelerationStructureData<'device>> {
+    ) -> anyhow::Result<Self> {
         let device = mesh.device();
         let geometry = vk::AccelerationStructureGeometryKHR::default()
             .geometry_type(vk::GeometryTypeKHR::TRIANGLES)
@@ -155,6 +156,7 @@ impl<'device> AccelerationStructureData<'device> {
             buffer: bottom_as_buffer,
             structure: bottom_as,
             handle,
+            mesh: Some(mesh),
         })
     }
 
@@ -166,7 +168,7 @@ impl<'device> AccelerationStructureData<'device> {
 
     pub fn build_toplevel(
         cmd: vk::CommandBuffer,
-        instances: &'device [&(&AccelerationStructureData, [f32; 12])],
+        instances: & [(&AccelerationStructureData, [f32; 12])],
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
         as_extension: &ash::extensions::khr::AccelerationStructure,
         graphics_queue: vk::Queue,

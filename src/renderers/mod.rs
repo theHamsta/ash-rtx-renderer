@@ -17,8 +17,14 @@ use self::raster::Raster;
 use self::ray_tracing::RayTrace;
 
 #[enum_dispatch]
-pub trait Renderer<'device> {
-    fn set_meshes(&mut self, _meshes: &[Rc<DeviceMesh<'device>>]) -> anyhow::Result<()> {
+pub trait Renderer<'device, 'ac> {
+    fn set_meshes(
+        &mut self,
+        _meshes: &[Rc<DeviceMesh<'ac>>],
+        _cmd: vk::CommandBuffer,
+        _graphics_queue: vk::Queue,
+        _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -53,10 +59,10 @@ pub trait Renderer<'device> {
 #[allow(clippy::large_enum_variant)]
 #[enum_dispatch(Renderer)]
 #[derive(Debug)]
-pub enum RendererImpl<'device> {
+pub enum RendererImpl<'device, 'ac> {
     ColorSine(ColorSine),
-    Raster(Raster<'device>),
-    RayTrace(RayTrace<'device>),
+    Raster(Raster<'device, 'ac>),
+    RayTrace(RayTrace<'device, 'ac>),
 }
 
 #[derive(Debug, Copy, Eq, PartialEq, Clone)]

@@ -4,6 +4,7 @@ use std::time::Instant;
 use anyhow::Context;
 use ash::{
     extensions::khr,
+    prelude::VkResult,
     vk::{self, SurfaceFormatKHR},
 };
 use ash_swapchain::Swapchain;
@@ -125,7 +126,7 @@ impl VulkanApp {
                 vk::KhrSpirv14Fn::name().as_ptr(),
                 vk::ExtScalarBlockLayoutFn::name().as_ptr(),
                 vk::KhrGetMemoryRequirements2Fn::name().as_ptr(),
-                khr::Swapchain::name().as_ptr()
+                khr::Swapchain::name().as_ptr(),
             ];
 
             let queue_create_info = [vk::DeviceQueueCreateInfo::default()
@@ -312,6 +313,21 @@ impl VulkanApp {
     #[must_use]
     pub fn instance(&self) -> &ash::Instance {
         &self.instance
+    }
+
+    pub fn graphics_queue(&self) -> vk::Queue {
+        self.graphics_queue
+    }
+
+    pub fn allocate_command_buffers(&self, count: u32) -> VkResult<Vec<vk::CommandBuffer>> {
+        unsafe {
+            self.device.allocate_command_buffers(
+                &vk::CommandBufferAllocateInfo::default()
+                    .command_pool(self.command_pool)
+                    .level(vk::CommandBufferLevel::PRIMARY)
+                    .command_buffer_count(count),
+            )
+        }
     }
 }
 

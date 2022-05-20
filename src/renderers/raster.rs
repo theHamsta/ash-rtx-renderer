@@ -25,8 +25,8 @@ pub fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
-pub struct Raster<'device> {
-    meshes: Vec<Rc<DeviceMesh<'device>>>,
+pub struct Raster<'device, 'ac> {
+    meshes: Vec<Rc<DeviceMesh<'ac>>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
     image_views: Vec<vk::ImageView>,
@@ -48,7 +48,7 @@ pub struct Raster<'device> {
     middle_drag: bool,
 }
 
-impl<'device> Raster<'device> {
+impl<'device> Raster<'device, '_> {
     pub fn new(device: &'device ash::Device) -> anyhow::Result<Self> {
         Ok(Self {
             zoom: 1.0,
@@ -88,7 +88,7 @@ impl<'device> Raster<'device> {
     }
 }
 
-impl std::fmt::Debug for Raster<'_> {
+impl std::fmt::Debug for Raster<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Raster")
             .field("viewports", &self.viewports)
@@ -99,7 +99,7 @@ impl std::fmt::Debug for Raster<'_> {
     }
 }
 
-impl<'device> Raster<'device> {
+impl<'device> Raster<'device, '_> {
     fn destroy_images(&mut self) {
         unsafe {
             let device = self.device;
@@ -126,7 +126,7 @@ impl<'device> Raster<'device> {
     }
 }
 
-impl<'device> Renderer<'device> for Raster<'device> {
+impl<'device, 'ac> Renderer<'device, '_> for Raster<'device, '_> {
     fn draw(
         &self,
         _device: &ash::Device,
@@ -216,7 +216,13 @@ impl<'device> Renderer<'device> for Raster<'device> {
         Ok(())
     }
 
-    fn set_meshes(&mut self, meshes: &[Rc<DeviceMesh<'device>>]) -> anyhow::Result<()> {
+    fn set_meshes(
+        &mut self,
+        meshes: &[Rc<DeviceMesh>],
+        _cmd: vk::CommandBuffer,
+        _graphics_queue: vk::Queue,
+        _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+    ) -> anyhow::Result<()> {
         self.meshes = meshes.to_vec();
         self.translation = meshes
             .iter()
@@ -453,7 +459,7 @@ impl<'device> Renderer<'device> for Raster<'device> {
     }
 }
 
-impl Drop for Raster<'_> {
+impl Drop for Raster<'_, '_> {
     fn drop(&mut self) {
         self.destroy_images();
     }
