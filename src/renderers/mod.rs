@@ -1,5 +1,6 @@
 pub mod color_sine;
 pub mod raster;
+pub mod ray_tracing;
 
 use std::rc::Rc;
 use std::time::Instant;
@@ -13,10 +14,13 @@ use crate::shader::ShaderPipeline;
 
 use self::color_sine::ColorSine;
 use self::raster::Raster;
+use self::ray_tracing::RayTrace;
 
 #[enum_dispatch]
 pub trait Renderer<'device> {
-    fn set_meshes(&mut self, _meshes: &[Rc<DeviceMesh<'device>>]) {}
+    fn set_meshes(&mut self, _meshes: &[Rc<DeviceMesh<'device>>]) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     fn set_resolution(
         &mut self,
@@ -52,6 +56,7 @@ pub trait Renderer<'device> {
 pub enum RendererImpl<'device> {
     ColorSine(ColorSine),
     Raster(Raster<'device>),
+    RayTrace(RayTrace<'device>),
 }
 
 #[derive(Debug, Copy, Eq, PartialEq, Clone)]

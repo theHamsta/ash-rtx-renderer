@@ -41,7 +41,7 @@ pub struct VulkanApp {
 }
 
 impl VulkanApp {
-    pub fn new(window: &Window) -> anyhow::Result<Self> {
+    pub fn new(window: &Window, with_raytracing: bool) -> anyhow::Result<Self> {
         unsafe {
             let surface_extensions = ash_window::enumerate_required_extensions(window)?;
             let mut instance_extensions = surface_extensions.to_vec();
@@ -107,16 +107,44 @@ impl VulkanApp {
                     Some((dev, family))
                 })
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
+            let mut features12 = vk::PhysicalDeviceVulkan12Features::default()
+                .buffer_device_address(true)
+                .vulkan_memory_model(true);
 
-            let device = instance.create_device(
-                physical_device,
-                &vk::DeviceCreateInfo::default()
-                    .enabled_extension_names(&[khr::Swapchain::name().as_ptr() as _])
-                    .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
-                        .queue_family_index(queue_family_index)
-                        .queue_priorities(&[1.0])]),
-                None,
-            )?;
+            let mut as_feature = vk::PhysicalDeviceAccelerationStructureFeaturesKHR::default()
+                .acceleration_structure(true);
+
+            let mut raytracing_pipeline =
+                vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default()
+                    .ray_tracing_pipeline(true);
+
+            let enabled_extension_names = [
+                ash::extensions::khr::RayTracingPipeline::name().as_ptr(),
+                ash::extensions::khr::AccelerationStructure::name().as_ptr(),
+                ash::extensions::khr::DeferredHostOperations::name().as_ptr(),
+                vk::KhrSpirv14Fn::name().as_ptr(),
+                vk::ExtScalarBlockLayoutFn::name().as_ptr(),
+                vk::KhrGetMemoryRequirements2Fn::name().as_ptr(),
+                khr::Swapchain::name().as_ptr()
+            ];
+
+            let queue_create_info = [vk::DeviceQueueCreateInfo::default()
+                .queue_family_index(queue_family_index)
+                .queue_priorities(&[1.0])];
+
+            let device_create_info = if with_raytracing {
+                vk::DeviceCreateInfo::default()
+                    .enabled_extension_names(&enabled_extension_names)
+                    .push_next(&mut features12)
+                    .push_next(&mut as_feature)
+                    .push_next(&mut raytracing_pipeline)
+                    .queue_create_infos(&queue_create_info)
+            } else {
+                vk::DeviceCreateInfo::default()
+                    .enabled_extension_names(&enabled_extension_names)
+                    .queue_create_infos(&queue_create_info)
+            };
+            let device = instance.create_device(physical_device, &device_create_info, None)?;
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let mut swapchain_options = ash_swapchain::Options::default();
@@ -278,6 +306,12 @@ impl VulkanApp {
 
     pub(crate) fn device_memory_properties(&self) -> &vk::PhysicalDeviceMemoryProperties {
         &self.device_memory_properties
+    }
+
+    /// Get a reference to the vulkan app's instance.
+    #[must_use]
+    pub fn instance(&self) -> &ash::Instance {
+        &self.instance
     }
 }
 

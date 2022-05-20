@@ -2,7 +2,7 @@ use anyhow::Error;
 use ash::vk;
 use device_mesh::DeviceMesh;
 use log::{debug, error, info, warn};
-use renderers::RenderStyle;
+use renderers::{ray_tracing::RayTrace, RenderStyle};
 use std::{
     path::PathBuf,
     rc::Rc,
@@ -22,6 +22,7 @@ use crate::{
     vulkan_app::VulkanApp,
 };
 
+mod acceleration_structure;
 mod device_mesh;
 mod mesh;
 mod renderers;
@@ -38,6 +39,9 @@ struct Args {
 
     #[clap(long)]
     only_triangles: bool,
+
+    #[clap(short, long)]
+    no_raytracing: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -72,14 +76,21 @@ fn main() -> anyhow::Result<()> {
     let window = WindowBuilder::new()
         .with_position(winit::dpi::PhysicalPosition::new(1300i32, 800))
         .build(&event_loop)?;
-    let mut vulkan_app = VulkanApp::new(&window)?;
+    let mut vulkan_app = VulkanApp::new(&window, !args.no_raytracing)?;
 
     // Device must be 'static as it must outlive structs moved into eventloop referencing it
     let device = Box::leak(Box::new(vulkan_app.device().clone()));
 
     let raster = RendererImpl::Raster(Raster::new(device)?);
+    let mut renderers = vec![raster];
+
+    if !args.no_raytracing {
+        let raytrace = RendererImpl::RayTrace(RayTrace::new(device, vulkan_app.instance())?);
+        renderers.push(raytrace);
+    }
     let color_sine = RendererImpl::ColorSine(ColorSine::default());
-    let mut renderers = [raster, color_sine];
+    renderers.push(color_sine);
+
     let meshes = meshes
         .iter()
         .map(|mesh| {
@@ -87,11 +98,12 @@ fn main() -> anyhow::Result<()> {
                 device,
                 vulkan_app.device_memory_properties(),
                 mesh,
+                !args.no_raytracing,
             )?))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
     for r in renderers.iter_mut() {
-        r.set_meshes(&meshes);
+        r.set_meshes(&meshes)?;
     }
     // Everything not moved into the event loop will not be dropped. So let renderers keep
     // references and drop manually here
@@ -189,6 +201,18 @@ fn main() -> anyhow::Result<()> {
                                 "Switched Drawer to {active_drawer_idx}: {:?}",
                                 renderers[active_drawer_idx]
                             );
+                        }
+                        Some(
+                            winit::event::VirtualKeyCode::Numpad3
+                            | winit::event::VirtualKeyCode::Key3,
+                        ) => {
+                            if renderers.len() > 2 {
+                                active_drawer_idx = 2;
+                                info!(
+                                    "Switched Drawer to {active_drawer_idx}: {:?}",
+                                    renderers[active_drawer_idx]
+                                );
+                            }
                         }
                         Some(
                             code @ (winit::event::VirtualKeyCode::W

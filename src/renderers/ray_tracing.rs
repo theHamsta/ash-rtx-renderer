@@ -1,5 +1,5 @@
 use crate::mesh::{Normal, Position};
-use std::{mem::size_of, mem::transmute, rc::Rc, time::Instant};
+use std::{mem::size_of, rc::Rc, time::Instant};
 
 use ash::vk::{self, ShaderStageFlags};
 use cgmath::{Point3, Vector3, Vector4};
@@ -25,7 +25,7 @@ pub fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
-pub struct Raster<'device> {
+pub struct RayTrace<'device> {
     meshes: Vec<Rc<DeviceMesh<'device>>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
@@ -37,19 +37,20 @@ pub struct Raster<'device> {
     pipeline: Option<vk::Pipeline>,
     pipeline_layout: Option<vk::PipelineLayout>,
     resolution: vk::Rect2D,
-    depth_image: vk::Image,
-    depth_image_view: vk::ImageView,
-    depth_image_memory: vk::DeviceMemory,
     uniforms: Option<PushConstants>,
     size: vk::Extent2D,
     zoom: f32,
     rotation: f32,
     translation: Point3<f32>,
     middle_drag: bool,
+    toplevel_as: Option<vk::AccelerationStructureKHR>,
+    bottomlevel_as: Vec<vk::AccelerationStructureKHR>,
+    raytracing_tracing_ext: ash::extensions::khr::RayTracingPipeline,
+    acceleration_structure_ext: ash::extensions::khr::AccelerationStructure,
 }
 
-impl<'device> Raster<'device> {
-    pub fn new(device: &'device ash::Device) -> anyhow::Result<Self> {
+impl<'device> RayTrace<'device> {
+    pub fn new(device: &'device ash::Device, instance: &ash::Instance) -> anyhow::Result<Self> {
         Ok(Self {
             zoom: 1.0,
             meshes: Default::default(),
@@ -74,9 +75,6 @@ impl<'device> Raster<'device> {
             pipeline: Default::default(),
             pipeline_layout: Default::default(),
             resolution: Default::default(),
-            depth_image: Default::default(),
-            depth_image_view: Default::default(),
-            depth_image_memory: Default::default(),
             uniforms: None,
             size: vk::Extent2D {
                 width: 0,
@@ -84,13 +82,19 @@ impl<'device> Raster<'device> {
             },
             rotation: 0.0,
             middle_drag: false,
+            toplevel_as: Default::default(),
+            bottomlevel_as: Default::default(),
+            acceleration_structure_ext: ash::extensions::khr::AccelerationStructure::new(
+                instance, device,
+            ),
+            raytracing_tracing_ext: ash::extensions::khr::RayTracingPipeline::new(instance, device),
         })
     }
 }
 
-impl std::fmt::Debug for Raster<'_> {
+impl std::fmt::Debug for RayTrace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Raster")
+        f.debug_struct("Orthographic")
             .field("viewports", &self.viewports)
             .field("scissors", &self.scissors)
             .field("image_views", &self.image_views)
@@ -99,14 +103,25 @@ impl std::fmt::Debug for Raster<'_> {
     }
 }
 
-impl<'device> Raster<'device> {
+impl<'device> RayTrace<'device> {
+    fn destroy_acceleration_structures(&mut self) {
+        unsafe {
+            let _ = self.device.device_wait_idle();
+            if let Some(acs) = self.toplevel_as {
+                self.acceleration_structure_ext
+                    .destroy_acceleration_structure(acs, None)
+            }
+            self.bottomlevel_as.drain(..).for_each(|acs| {
+                self.acceleration_structure_ext
+                    .destroy_acceleration_structure(acs, None)
+            });
+        }
+    }
+
     fn destroy_images(&mut self) {
         unsafe {
             let device = self.device;
-            let _ = device.device_wait_idle();
-            device.destroy_image(self.depth_image, None);
-            device.destroy_image_view(self.depth_image_view, None);
-            device.free_memory(self.depth_image_memory, None);
+            device.device_wait_idle().unwrap();
             for img in self.image_views.iter() {
                 device.destroy_image_view(*img, None);
             }
@@ -115,6 +130,7 @@ impl<'device> Raster<'device> {
             }
         }
     }
+
     fn update_push_constants(&mut self) {
         self.uniforms = Some(PushConstants::new(
             self.size,
@@ -126,7 +142,7 @@ impl<'device> Raster<'device> {
     }
 }
 
-impl<'device> Renderer<'device> for Raster<'device> {
+impl<'device> Renderer<'device> for RayTrace<'device> {
     fn draw(
         &self,
         _device: &ash::Device,
@@ -136,83 +152,7 @@ impl<'device> Renderer<'device> for Raster<'device> {
         swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         trace!("draw for {self:?}");
-        if !self.meshes.is_empty() {
-            let clear_values = [
-                vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 0.0],
-                    },
-                },
-                vk::ClearValue {
-                    depth_stencil: vk::ClearDepthStencilValue {
-                        depth: 1.0,
-                        stencil: 0,
-                    },
-                },
-            ];
-            if let Some(pipeline) = self.pipeline {
-                let render_pass_begin_info = vk::RenderPassBeginInfo::default()
-                    .render_pass(
-                        self.renderpass
-                            .ok_or_else(|| anyhow::anyhow!("No renderpass created"))?,
-                    )
-                    .framebuffer(self.framebuffers[swapchain_idx as usize])
-                    .render_area(self.resolution)
-                    .clear_values(&clear_values);
-                trace!("{render_pass_begin_info:?}");
-                unsafe {
-                    self.device.cmd_begin_render_pass(
-                        cmd,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    );
-                    self.device
-                        .cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
-                    self.device.cmd_set_viewport(cmd, 0, &self.viewports);
-                    self.device.cmd_set_scissor(cmd, 0, &self.scissors);
-
-                    self.device.cmd_push_constants(
-                        cmd,
-                        self.pipeline_layout.unwrap(),
-                        vk::ShaderStageFlags::VERTEX,
-                        0,
-                        &transmute::<PushConstants, [u8; size_of::<PushConstants>()]>(
-                            self.uniforms.unwrap(),
-                        ),
-                    );
-                    let device = self.device;
-                    for mesh in self.meshes.iter() {
-                        device.cmd_bind_vertex_buffers(
-                            cmd,
-                            0,
-                            &[
-                                *mesh.position().ok_or_else(|| {
-                                    anyhow::anyhow!("Mesh has no vertex positions")
-                                })?,
-                                *mesh
-                                    .normals()
-                                    .ok_or_else(|| anyhow::anyhow!("Mesh has no vertex normals"))?,
-                            ],
-                            &[0, 0],
-                        );
-                        if let Some(&idx_buffer) = mesh.indices() {
-                            device.cmd_bind_index_buffer(cmd, idx_buffer, 0, vk::IndexType::UINT32);
-                            device.cmd_draw_indexed(
-                                cmd,
-                                mesh.num_triangles() as u32 * 3,
-                                1,
-                                0,
-                                0,
-                                1,
-                            );
-                        } else {
-                            device.cmd_draw(cmd, mesh.num_vertices() as u32 * 3, 1, 0, 0);
-                        }
-                    }
-                    device.cmd_end_render_pass(cmd);
-                }
-            }
-        }
+        if !self.meshes.is_empty() {}
         Ok(())
     }
 
@@ -236,6 +176,28 @@ impl<'device> Renderer<'device> for Raster<'device> {
                 },
             )
             / meshes.iter().map(|mesh| mesh.num_vertices()).sum::<usize>() as f32;
+        self.destroy_acceleration_structures();
+        unsafe {
+            self.toplevel_as = Some(
+                self.acceleration_structure_ext
+                    .create_acceleration_structure(
+                        &vk::AccelerationStructureCreateInfoKHR::default()
+                            .ty(vk::AccelerationStructureTypeKHR::TOP_LEVEL),
+                        None,
+                    )?,
+            );
+            self.bottomlevel_as = meshes
+                .iter()
+                .flat_map(|m| {
+                    self.acceleration_structure_ext
+                        .create_acceleration_structure(
+                            &vk::AccelerationStructureCreateInfoKHR::default()
+                                .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL),
+                            None,
+                        )
+                })
+                .collect();
+        }
         Ok(())
     }
 
@@ -328,58 +290,11 @@ impl<'device> Renderer<'device> for Raster<'device> {
             })
             .collect();
 
-        let depth_image_create_info = vk::ImageCreateInfo::default()
-            .image_type(vk::ImageType::TYPE_2D)
-            .format(vk::Format::D16_UNORM)
-            .extent(vk::Extent3D {
-                width: size.width,
-                height: size.height,
-                depth: 1,
-            })
-            .mip_levels(1)
-            .array_layers(1)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .tiling(vk::ImageTiling::OPTIMAL)
-            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        self.depth_image = unsafe { device.create_image(&depth_image_create_info, None)? };
-
-        self.depth_image_memory = unsafe {
-            let depth_image_memory_req = device.get_image_memory_requirements(self.depth_image);
-            let depth_image_memory_index = find_memorytype_index(
-                &depth_image_memory_req,
-                device_memory_properties,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            )
-            .ok_or_else(|| anyhow::anyhow!("Could not find memory index for depth buffer"))?;
-            let depth_image_allocate_info = vk::MemoryAllocateInfo::default()
-                .allocation_size(depth_image_memory_req.size)
-                .memory_type_index(depth_image_memory_index);
-
-            device.allocate_memory(&depth_image_allocate_info, None)?
-        };
-        unsafe { device.bind_image_memory(self.depth_image, self.depth_image_memory, 0)? };
-        self.depth_image_view = unsafe {
-            let depth_image_view_info = vk::ImageViewCreateInfo::default()
-                .subresource_range(
-                    vk::ImageSubresourceRange::default()
-                        .aspect_mask(vk::ImageAspectFlags::DEPTH)
-                        .level_count(1)
-                        .layer_count(1),
-                )
-                .image(self.depth_image)
-                .format(depth_image_create_info.format)
-                .view_type(vk::ImageViewType::TYPE_2D);
-
-            device.create_image_view(&depth_image_view_info, None)?
-        };
-
         self.framebuffers = self
             .image_views
             .iter()
             .map(|&view| {
-                let framebuffer_attachments = [view, self.depth_image_view];
+                let framebuffer_attachments = [view];
                 let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(renderpass)
                     .attachments(&framebuffer_attachments)
@@ -418,6 +333,7 @@ impl<'device> Renderer<'device> for Raster<'device> {
             _ => (),
         }
     }
+
     fn process_window_event(&mut self, event: &winit::event::WindowEvent) {
         let mut handled = true;
         match event {
@@ -453,8 +369,9 @@ impl<'device> Renderer<'device> for Raster<'device> {
     }
 }
 
-impl Drop for Raster<'_> {
+impl Drop for RayTrace<'_> {
     fn drop(&mut self) {
+        self.destroy_acceleration_structures();
         self.destroy_images();
     }
 }

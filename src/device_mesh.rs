@@ -31,7 +31,7 @@ fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
-struct Buffer<'device> {
+pub struct Buffer<'device> {
     device: &'device ash::Device,
     memory: vk::DeviceMemory,
     buffer: vk::Buffer,
@@ -49,7 +49,7 @@ impl Drop for Buffer<'_> {
 }
 
 impl<'device> Buffer<'device> {
-    fn new<T>(
+    pub fn new<T>(
         device: &'device ash::Device,
         mem_properties: &vk::PhysicalDeviceMemoryProperties,
         buffer_create_info: &vk::BufferCreateInfo,
@@ -92,6 +92,18 @@ impl<'device> Buffer<'device> {
             })
         }
     }
+
+    /// Get the buffer's device.
+    #[must_use]
+    pub fn device(&self) -> &ash::Device {
+        self.device
+    }
+
+    /// Get a mutable reference to the buffer's buffer.
+    #[must_use]
+    pub fn buffer_mut(&mut self) -> &mut vk::Buffer {
+        &mut self.buffer
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -104,6 +116,7 @@ pub enum AttributeType {
 pub struct DeviceMesh<'device> {
     mesh: Rc<Mesh>,
     buffers: HashMap<AttributeType, Buffer<'device>>,
+    device: &'device ash::Device,
 }
 
 impl<'device> DeviceMesh<'device> {
@@ -111,8 +124,23 @@ impl<'device> DeviceMesh<'device> {
         device: &'device ash::Device,
         mem_properties: &vk::PhysicalDeviceMemoryProperties,
         mesh: &Rc<Mesh>,
+        with_ray_tracing: bool,
     ) -> anyhow::Result<Self> {
         let mut buffers = HashMap::new();
+        let vertex_buffer_usage = if with_ray_tracing {
+            vk::BufferUsageFlags::VERTEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR
+        } else {
+            vk::BufferUsageFlags::VERTEX_BUFFER
+        };
+        let index_buffer_usage = if with_ray_tracing {
+            vk::BufferUsageFlags::INDEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR
+        } else {
+            vk::BufferUsageFlags::INDEX_BUFFER
+        };
         buffers.insert(
             AttributeType::Position,
             Buffer::new(
@@ -120,7 +148,7 @@ impl<'device> DeviceMesh<'device> {
                 mem_properties,
                 &vk::BufferCreateInfo::default()
                     .size((3 * size_of::<f32>() * mesh.num_vertices()) as vk::DeviceSize)
-                    .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                    .usage(vertex_buffer_usage)
                     .sharing_mode(vk::SharingMode::EXCLUSIVE),
                 Some(mesh.positions()),
             )?,
@@ -133,7 +161,7 @@ impl<'device> DeviceMesh<'device> {
                     mem_properties,
                     &vk::BufferCreateInfo::default()
                         .size((3 * size_of::<f32>() * mesh.num_vertices()) as vk::DeviceSize)
-                        .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                        .usage(vertex_buffer_usage)
                         .sharing_mode(vk::SharingMode::EXCLUSIVE),
                     Some(vertex_normals),
                 )?,
@@ -146,7 +174,7 @@ impl<'device> DeviceMesh<'device> {
                 mem_properties,
                 &vk::BufferCreateInfo::default()
                     .size((3 * size_of::<u32>() * mesh.num_triangles()) as vk::DeviceSize)
-                    .usage(vk::BufferUsageFlags::INDEX_BUFFER)
+                    .usage(index_buffer_usage)
                     .sharing_mode(vk::SharingMode::EXCLUSIVE),
                 Some(mesh.triangles()),
             )?,
@@ -155,6 +183,7 @@ impl<'device> DeviceMesh<'device> {
         Ok(Self {
             mesh: Rc::clone(mesh),
             buffers,
+            device,
         })
     }
 
@@ -184,5 +213,11 @@ impl<'device> DeviceMesh<'device> {
     #[must_use]
     pub fn mesh(&self) -> &Mesh {
         self.mesh.as_ref()
+    }
+
+    /// Get the device mesh's device.
+    #[must_use]
+    pub fn device(&self) -> &ash::Device {
+        self.device
     }
 }
