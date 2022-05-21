@@ -1,5 +1,5 @@
 use crate::{
-    acceleration_structure::AccelerationStructureData,
+    acceleration_structure::{AccelerationStructureData, TopLevelAccelerationStructure},
     mesh::{Normal, Position},
 };
 use std::{mem::size_of, rc::Rc, time::Instant};
@@ -28,7 +28,7 @@ pub fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
-pub struct RayTrace<'device, 'ac> {
+pub struct RayTrace<'device> {
     meshes: Vec<Rc<DeviceMesh<'device>>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
@@ -46,13 +46,12 @@ pub struct RayTrace<'device, 'ac> {
     rotation: f32,
     translation: Point3<f32>,
     middle_drag: bool,
-    toplevel_as: Option<AccelerationStructureData<'ac>>,
-    bottomlevel_as: Vec<AccelerationStructureData<'ac>>,
+    toplevel_as: Option<TopLevelAccelerationStructure<'device>>,
     raytracing_tracing_ext: ash::extensions::khr::RayTracingPipeline,
     acceleration_structure_ext: ash::extensions::khr::AccelerationStructure,
 }
 
-impl<'device, 'ac> RayTrace<'device, 'ac> {
+impl<'device> RayTrace<'device> {
     pub fn new(device: &'device ash::Device, instance: &ash::Instance) -> anyhow::Result<Self> {
         Ok(Self {
             zoom: 1.0,
@@ -86,7 +85,6 @@ impl<'device, 'ac> RayTrace<'device, 'ac> {
             rotation: 0.0,
             middle_drag: false,
             toplevel_as: Default::default(),
-            bottomlevel_as: Default::default(),
             acceleration_structure_ext: ash::extensions::khr::AccelerationStructure::new(
                 instance, device,
             ),
@@ -95,7 +93,7 @@ impl<'device, 'ac> RayTrace<'device, 'ac> {
     }
 }
 
-impl std::fmt::Debug for RayTrace<'_,'_> {
+impl std::fmt::Debug for RayTrace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Orthographic")
             .field("viewports", &self.viewports)
@@ -106,7 +104,7 @@ impl std::fmt::Debug for RayTrace<'_,'_> {
     }
 }
 
-impl<'device> RayTrace<'device, '_> {
+impl<'device> RayTrace<'device> {
     fn destroy_images(&mut self) {
         unsafe {
             let device = self.device;
@@ -131,14 +129,14 @@ impl<'device> RayTrace<'device, '_> {
     }
 }
 
-impl<'device> Renderer<'device, '_> for RayTrace<'device, '_> {
+impl<'device> Renderer<'device> for RayTrace<'device> {
     fn draw(
         &self,
         _device: &ash::Device,
-        cmd: vk::CommandBuffer,
+        _cmd: vk::CommandBuffer,
         _image: vk::Image,
         _start_instant: Instant,
-        swapchain_idx: usize,
+        _swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         trace!("draw for {self:?}");
         if !self.meshes.is_empty() {}
@@ -146,14 +144,14 @@ impl<'device> Renderer<'device, '_> for RayTrace<'device, '_> {
     }
 
     fn set_meshes(
-        &'device mut self,
-        meshes: &[Rc<DeviceMesh<'_>>],
+        &mut self,
+        meshes: &[Rc<DeviceMesh<'device>>],
         cmd: vk::CommandBuffer,
         graphics_queue: vk::Queue,
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
     ) -> anyhow::Result<()> {
-        self.meshes = meshes.to_vec();
-        self.translation = self.meshes
+        self.translation = self
+            .meshes
             .iter()
             .flat_map(|mesh| mesh.mesh().positions().iter())
             .fold(
@@ -171,31 +169,23 @@ impl<'device> Renderer<'device, '_> for RayTrace<'device, '_> {
                 },
             )
             / meshes.iter().map(|mesh| mesh.num_vertices()).sum::<usize>() as f32;
-        self.bottomlevel_as = self.meshes
+        let bottomlevel_as = meshes
             .iter()
             .flat_map(|m| {
-                AccelerationStructureData::build_bottomlevel(
+                Some((AccelerationStructureData::build_bottomlevel(
                     cmd,
+                    self.device,
                     Rc::clone(m),
                     device_memory_properties,
                     &self.acceleration_structure_ext,
                     graphics_queue,
-                )
+                ).ok()?, [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]))
             })
             .collect();
-        let translated_bl_as = self
-            .bottomlevel_as
-            .iter()
-            .map(|m| {
-                (
-                    m,
-                    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                )
-            })
-            .collect::<Vec<_>>();
-        self.toplevel_as = Some(AccelerationStructureData::build_toplevel(
+        self.toplevel_as = Some(TopLevelAccelerationStructure::build_toplevel(
             cmd,
-            &translated_bl_as,
+            self.device,
+            bottomlevel_as,
             device_memory_properties,
             &self.acceleration_structure_ext,
             graphics_queue,
@@ -371,7 +361,7 @@ impl<'device> Renderer<'device, '_> for RayTrace<'device, '_> {
     }
 }
 
-impl Drop for RayTrace<'_, '_> {
+impl Drop for RayTrace<'_> {
     fn drop(&mut self) {
         self.destroy_images();
     }

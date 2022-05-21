@@ -17,10 +17,10 @@ use self::raster::Raster;
 use self::ray_tracing::RayTrace;
 
 #[enum_dispatch]
-pub trait Renderer<'device, 'ac> {
+pub trait Renderer<'device> {
     fn set_meshes(
         &mut self,
-        _meshes: &[Rc<DeviceMesh<'ac>>],
+        _meshes: &[Rc<DeviceMesh<'device>>],
         _cmd: vk::CommandBuffer,
         _graphics_queue: vk::Queue,
         _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
@@ -59,10 +59,10 @@ pub trait Renderer<'device, 'ac> {
 #[allow(clippy::large_enum_variant)]
 #[enum_dispatch(Renderer)]
 #[derive(Debug)]
-pub enum RendererImpl<'device, 'ac> {
+pub enum RendererImpl<'device> {
     ColorSine(ColorSine),
-    Raster(Raster<'device, 'ac>),
-    RayTrace(RayTrace<'device, 'ac>),
+    Raster(Raster<'device>),
+    RayTrace(RayTrace<'device>),
 }
 
 #[derive(Debug, Copy, Eq, PartialEq, Clone)]

@@ -25,8 +25,8 @@ pub fn find_memorytype_index(
         .map(|(index, _memory_type)| index as _)
 }
 
-pub struct Raster<'device, 'ac> {
-    meshes: Vec<Rc<DeviceMesh<'ac>>>,
+pub struct Raster<'device> {
+    meshes: Vec<Rc<DeviceMesh<'device>>>,
     viewports: Vec<vk::Viewport>,
     scissors: Vec<vk::Rect2D>,
     image_views: Vec<vk::ImageView>,
@@ -48,7 +48,7 @@ pub struct Raster<'device, 'ac> {
     middle_drag: bool,
 }
 
-impl<'device> Raster<'device, '_> {
+impl<'device> Raster<'device> {
     pub fn new(device: &'device ash::Device) -> anyhow::Result<Self> {
         Ok(Self {
             zoom: 1.0,
@@ -88,7 +88,7 @@ impl<'device> Raster<'device, '_> {
     }
 }
 
-impl std::fmt::Debug for Raster<'_, '_> {
+impl std::fmt::Debug for Raster<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Raster")
             .field("viewports", &self.viewports)
@@ -99,7 +99,7 @@ impl std::fmt::Debug for Raster<'_, '_> {
     }
 }
 
-impl<'device> Raster<'device, '_> {
+impl<'device> Raster<'device> {
     fn destroy_images(&mut self) {
         unsafe {
             let device = self.device;
@@ -126,7 +126,7 @@ impl<'device> Raster<'device, '_> {
     }
 }
 
-impl<'device, 'ac> Renderer<'device, '_> for Raster<'device, '_> {
+impl<'device, 'ac> Renderer<'device> for Raster<'device> {
     fn draw(
         &self,
         _device: &ash::Device,
@@ -218,7 +218,7 @@ impl<'device, 'ac> Renderer<'device, '_> for Raster<'device, '_> {
 
     fn set_meshes(
         &mut self,
-        meshes: &[Rc<DeviceMesh>],
+        meshes: &[Rc<DeviceMesh<'device>>],
         _cmd: vk::CommandBuffer,
         _graphics_queue: vk::Queue,
         _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
@@ -459,7 +459,7 @@ impl<'device, 'ac> Renderer<'device, '_> for Raster<'device, '_> {
     }
 }
 
-impl Drop for Raster<'_, '_> {
+impl Drop for Raster<'_> {
     fn drop(&mut self) {
         self.destroy_images();
     }

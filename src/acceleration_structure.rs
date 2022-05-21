@@ -15,22 +15,29 @@ pub struct AccelerationStructureData<'device> {
     mesh: Option<Rc<DeviceMesh<'device>>>,
 }
 
+pub struct TopLevelAccelerationStructure<'device> {
+    structure: vk::AccelerationStructureKHR,
+    buffer: Buffer<'device>,
+    handle: vk::DeviceAddress,
+    bottomlevel_as: Vec<(AccelerationStructureData<'device>, [f32; 12])>,
+}
+
 impl<'device> AccelerationStructureData<'device> {
     pub fn build_bottomlevel(
         cmd: vk::CommandBuffer,
+        device: &'device ash::Device,
         mesh: Rc<DeviceMesh<'device>>,
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
         as_extension: &ash::extensions::khr::AccelerationStructure,
         graphics_queue: vk::Queue,
     ) -> anyhow::Result<Self> {
-        let device = mesh.device();
         let geometry = vk::AccelerationStructureGeometryKHR::default()
             .geometry_type(vk::GeometryTypeKHR::TRIANGLES)
             .geometry(vk::AccelerationStructureGeometryDataKHR {
                 triangles: vk::AccelerationStructureGeometryTrianglesDataKHR::default()
                     .vertex_data(vk::DeviceOrHostAddressConstKHR {
                         device_address: unsafe {
-                            mesh.device().get_buffer_device_address(
+                            device.get_buffer_device_address(
                                 &vk::BufferDeviceAddressInfo::default().buffer(
                                     *mesh.position().ok_or_else(|| {
                                         anyhow::anyhow!("No vertex buffer on mesh")
@@ -44,7 +51,7 @@ impl<'device> AccelerationStructureData<'device> {
                     .vertex_format(vk::Format::R32G32B32_SFLOAT)
                     .index_data(vk::DeviceOrHostAddressConstKHR {
                         device_address: unsafe {
-                            mesh.device().get_buffer_device_address(
+                            device.get_buffer_device_address(
                                 &vk::BufferDeviceAddressInfo::default().buffer(
                                     *mesh.indices().ok_or_else(|| {
                                         anyhow::anyhow!("No index buffer on mesh")
@@ -156,7 +163,7 @@ impl<'device> AccelerationStructureData<'device> {
             buffer: bottom_as_buffer,
             structure: bottom_as,
             handle,
-            mesh: Some(mesh),
+            mesh: Some(Rc::clone(&mesh)),
         })
     }
 
@@ -165,16 +172,18 @@ impl<'device> AccelerationStructureData<'device> {
             device_handle: self.handle,
         }
     }
+}
 
+impl<'device> TopLevelAccelerationStructure<'device> {
     pub fn build_toplevel(
         cmd: vk::CommandBuffer,
-        instances: & [(&AccelerationStructureData, [f32; 12])],
+        device: &'device ash::Device,
+        bottomlevel_as: Vec<(AccelerationStructureData<'device>, [f32; 12])>,
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
         as_extension: &ash::extensions::khr::AccelerationStructure,
         graphics_queue: vk::Queue,
     ) -> anyhow::Result<Self> {
-        let device = instances[0].0.device();
-        let instances: Vec<_> = instances
+        let instances: Vec<_> = bottomlevel_as
             .iter()
             .map(
                 |(bottomlevel_as, transform)| vk::AccelerationStructureInstanceKHR {
@@ -338,6 +347,7 @@ impl<'device> AccelerationStructureData<'device> {
                         .acceleration_structure(top_as),
                 )
             },
+            bottomlevel_as
         })
     }
 
