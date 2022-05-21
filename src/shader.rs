@@ -1,4 +1,4 @@
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::intrinsics::transmute;
 use std::io::Cursor;
 
@@ -214,5 +214,48 @@ impl<'device> ShaderPipeline<'device> {
             renderpass,
             pipeline_layout,
         ))
+    }
+
+    pub fn make_rtx_pipeline(
+        &self,
+        device: &ash::Device,
+        shader_groups: &[vk::RayTracingShaderGroupCreateInfoKHR],
+        raytracing_ext: &ash::extensions::khr::RayTracingPipeline,
+        descriptor_set_layout: vk::DescriptorSetLayout,
+        max_pipeline_ray_recursion_depth: u32,
+        push_constant_ranges: &[vk::PushConstantRange],
+    ) -> anyhow::Result<(vk::Pipeline, vk::PipelineLayout)> {
+        let layouts = vec![descriptor_set_layout];
+        let layout_create_info = vk::PipelineLayoutCreateInfo::default()
+            .set_layouts(&layouts)
+            .push_constant_ranges(push_constant_ranges);
+
+        let pipeline_layout =
+            unsafe { device.create_pipeline_layout(&layout_create_info, None) }.unwrap();
+
+        let shader_stage_create_infos = self
+            .shaders
+            .iter()
+            .map(|shader| {
+                vk::PipelineShaderStageCreateInfo::default()
+                    .name(unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") })
+                    .module(shader.module)
+                    .stage(unsafe { transmute(shader.info.get_shader_stage()) })
+            })
+            .collect::<Vec<_>>();
+        let pipeline = unsafe {
+            raytracing_ext.create_ray_tracing_pipelines(
+                vk::DeferredOperationKHR::null(),
+                vk::PipelineCache::null(),
+                &[vk::RayTracingPipelineCreateInfoKHR::default()
+                    .stages(&shader_stage_create_infos)
+                    .groups(shader_groups)
+                    .max_pipeline_ray_recursion_depth(max_pipeline_ray_recursion_depth)
+                    .layout(pipeline_layout)],
+                None,
+            )
+        }?[0];
+
+        Ok((pipeline, pipeline_layout))
     }
 }

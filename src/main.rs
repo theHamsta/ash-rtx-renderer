@@ -79,7 +79,7 @@ fn main() -> anyhow::Result<()> {
     let mut with_raytracing = !args.no_raytracing;
     let mut vulkan_app = VulkanApp::new(&window, with_raytracing).or_else(|err| {
         if with_raytracing {
-            error!("Failed to initialize with raytracing (is it supported by driver and hardware?). Trying again without!");
+            error!("Failed to initialize with raytracing (is it supported by driver and hardware?). Disambling ray tracing...");
             with_raytracing = false;
             VulkanApp::new(&window, false)
         } else {

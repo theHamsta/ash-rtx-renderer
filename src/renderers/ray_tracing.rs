@@ -30,12 +30,8 @@ pub fn find_memorytype_index(
 
 pub struct RayTrace<'device> {
     meshes: Vec<Rc<DeviceMesh<'device>>>,
-    viewports: Vec<vk::Viewport>,
-    scissors: Vec<vk::Rect2D>,
     image_views: Vec<vk::ImageView>,
-    framebuffers: Vec<vk::Framebuffer>,
     device: &'device ash::Device,
-    renderpass: Option<vk::RenderPass>,
     shader_pipeline: ShaderPipeline<'device>,
     pipeline: Option<vk::Pipeline>,
     pipeline_layout: Option<vk::PipelineLayout>,
@@ -56,12 +52,8 @@ impl<'device> RayTrace<'device> {
         Ok(Self {
             zoom: 1.0,
             meshes: Default::default(),
-            viewports: Default::default(),
-            scissors: Default::default(),
             image_views: Default::default(),
-            framebuffers: Default::default(),
             device,
-            renderpass: Default::default(),
             shader_pipeline: ShaderPipeline::new(
                 device,
                 &[
@@ -96,10 +88,7 @@ impl<'device> RayTrace<'device> {
 impl std::fmt::Debug for RayTrace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Orthographic")
-            .field("viewports", &self.viewports)
-            .field("scissors", &self.scissors)
             .field("image_views", &self.image_views)
-            .field("framebuffers", &self.framebuffers)
             .finish()
     }
 }
@@ -111,9 +100,6 @@ impl<'device> RayTrace<'device> {
             device.device_wait_idle().unwrap();
             for img in self.image_views.iter() {
                 device.destroy_image_view(*img, None);
-            }
-            for img in self.framebuffers.iter() {
-                device.destroy_framebuffer(*img, None);
             }
         }
     }
@@ -172,14 +158,18 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         let bottomlevel_as = meshes
             .iter()
             .flat_map(|m| {
-                Some((AccelerationStructureData::build_bottomlevel(
-                    cmd,
-                    self.device,
-                    Rc::clone(m),
-                    device_memory_properties,
-                    &self.acceleration_structure_ext,
-                    graphics_queue,
-                ).ok()?, [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]))
+                Some((
+                    AccelerationStructureData::build_bottomlevel(
+                        cmd,
+                        self.device,
+                        Rc::clone(m),
+                        device_memory_properties,
+                        &self.acceleration_structure_ext,
+                        graphics_queue,
+                    )
+                    .ok()?,
+                    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                ))
             })
             .collect();
         self.toplevel_as = Some(TopLevelAccelerationStructure::build_toplevel(
@@ -207,55 +197,76 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         self.size = size;
         self.update_push_constants();
 
-        self.viewports = vec![vk::Viewport {
-            x: 0.0,
-            y: 0.0,
-            width: size.width as f32,
-            height: size.height as f32,
-            min_depth: 0.0,
-            max_depth: 1.0,
-        }];
-        self.scissors = vec![size.into()];
-        let vertex_attribute_desc = [
-            vk::VertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: 0,
-            },
-            vk::VertexInputAttributeDescription {
-                location: 1,
-                binding: 1,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: 0,
-            },
+        let shader_groups = vec![
+            // group0 = [ raygen ]
+            vk::RayTracingShaderGroupCreateInfoKHR::default()
+                .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
+                .general_shader(0)
+                .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+                .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                .intersection_shader(vk::SHADER_UNUSED_KHR),
+            // group1 = [ chit ]
+            vk::RayTracingShaderGroupCreateInfoKHR::default()
+                .ty(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP)
+                .general_shader(vk::SHADER_UNUSED_KHR)
+                .closest_hit_shader(1)
+                .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                .intersection_shader(vk::SHADER_UNUSED_KHR),
+            // group2 = [ miss ]
+            vk::RayTracingShaderGroupCreateInfoKHR::default()
+                .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
+                .general_shader(2)
+                .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+                .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                .intersection_shader(vk::SHADER_UNUSED_KHR),
         ];
-        let vertex_binding_desc = [
-            vk::VertexInputBindingDescription {
-                binding: 0,
-                stride: std::mem::size_of::<Position>() as u32,
-                input_rate: vk::VertexInputRate::VERTEX,
-            },
-            vk::VertexInputBindingDescription {
-                binding: 1,
-                stride: std::mem::size_of::<Normal>() as u32,
-                input_rate: vk::VertexInputRate::VERTEX,
-            },
-        ];
-        let (pipeline, renderpass, pipeline_layout) = self.shader_pipeline.make_graphics_pipeline(
+
+        let descriptor_set_layout = unsafe {
+            let binding_flags_inner = [
+                vk::DescriptorBindingFlagsEXT::empty(),
+                vk::DescriptorBindingFlagsEXT::empty(),
+                vk::DescriptorBindingFlagsEXT::empty(),
+            ];
+
+            let mut binding_flags = vk::DescriptorSetLayoutBindingFlagsCreateInfoEXT::default()
+                .binding_flags(&binding_flags_inner);
+            device.create_descriptor_set_layout(
+                &vk::DescriptorSetLayoutCreateInfo::default()
+                    .bindings(&[
+                        vk::DescriptorSetLayoutBinding::default()
+                            .descriptor_count(1)
+                            .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR)
+                            .stage_flags(vk::ShaderStageFlags::RAYGEN_KHR)
+                            .binding(0),
+                        vk::DescriptorSetLayoutBinding::default()
+                            .descriptor_count(1)
+                            .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+                            .stage_flags(vk::ShaderStageFlags::RAYGEN_KHR)
+                            .binding(1),
+                        vk::DescriptorSetLayoutBinding::default()
+                            .descriptor_count(1)
+                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                            .stage_flags(vk::ShaderStageFlags::CLOSEST_HIT_KHR)
+                            .binding(2),
+                    ])
+                    .push_next(&mut binding_flags),
+                None,
+            )
+        }
+        .unwrap();
+        let max_recursion_depth = 1;
+
+        let (pipeline, pipeline_layout) = self.shader_pipeline.make_rtx_pipeline(
             device,
-            &self.scissors,
-            &self.viewports,
-            surface_format,
-            &vertex_attribute_desc,
-            &vertex_binding_desc,
+            &shader_groups,
+            &self.raytracing_tracing_ext,
+            descriptor_set_layout,
+            max_recursion_depth,
             &[vk::PushConstantRange::default()
                 .offset(0)
                 .size(size_of::<PushConstants>().try_into()?)
                 .stage_flags(ShaderStageFlags::VERTEX)],
-            render_style,
         )?;
-        self.renderpass = Some(renderpass);
         self.pipeline = Some(pipeline);
         self.pipeline_layout = Some(pipeline_layout);
         self.image_views = images
@@ -281,26 +292,6 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 unsafe { device.create_image_view(&create_view_info, None).unwrap() }
             })
             .collect();
-
-        self.framebuffers = self
-            .image_views
-            .iter()
-            .map(|&view| {
-                let framebuffer_attachments = [view];
-                let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
-                    .render_pass(renderpass)
-                    .attachments(&framebuffer_attachments)
-                    .width(size.width)
-                    .height(size.height)
-                    .layers(1);
-
-                unsafe {
-                    device
-                        .create_framebuffer(&frame_buffer_create_info, None)
-                        .map_err(|err| anyhow::anyhow!("Failed to create framebuffer: {err}"))
-                }
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
 
         self.resolution = size.into();
         Ok(())
