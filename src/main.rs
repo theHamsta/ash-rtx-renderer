@@ -90,6 +90,7 @@ fn main() -> anyhow::Result<()> {
     }
     let color_sine = RendererImpl::ColorSine(ColorSine::default());
     renderers.push(color_sine);
+    debug!("Renderers: {renderers:?}");
 
     let meshes = meshes
         .iter()
@@ -107,7 +108,7 @@ fn main() -> anyhow::Result<()> {
             &meshes,
             vulkan_app.allocate_command_buffers(1)?[0],
             vulkan_app.graphics_queue(),
-            &vulkan_app.device_memory_properties(),
+            vulkan_app.device_memory_properties(),
         )?;
     }
     // Everything not moved into the event loop will not be dropped. So let renderers keep
