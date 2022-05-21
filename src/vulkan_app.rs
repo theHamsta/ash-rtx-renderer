@@ -119,15 +119,24 @@ impl VulkanApp {
                 vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default()
                     .ray_tracing_pipeline(true);
 
-            let enabled_extension_names = [
-                ash::extensions::khr::RayTracingPipeline::name().as_ptr(),
-                ash::extensions::khr::AccelerationStructure::name().as_ptr(),
-                ash::extensions::khr::DeferredHostOperations::name().as_ptr(),
-                vk::KhrSpirv14Fn::name().as_ptr(),
-                vk::ExtScalarBlockLayoutFn::name().as_ptr(),
-                vk::KhrGetMemoryRequirements2Fn::name().as_ptr(),
-                khr::Swapchain::name().as_ptr(),
-            ];
+            let enabled_extension_names = if with_raytracing {
+                vec![
+                    ash::extensions::khr::RayTracingPipeline::name().as_ptr(),
+                    ash::extensions::khr::AccelerationStructure::name().as_ptr(),
+                    ash::extensions::khr::DeferredHostOperations::name().as_ptr(),
+                    vk::KhrSpirv14Fn::name().as_ptr(),
+                    vk::ExtScalarBlockLayoutFn::name().as_ptr(),
+                    vk::KhrGetMemoryRequirements2Fn::name().as_ptr(),
+                    khr::Swapchain::name().as_ptr(),
+                ]
+            } else {
+                vec![
+                    vk::KhrSpirv14Fn::name().as_ptr(),
+                    vk::ExtScalarBlockLayoutFn::name().as_ptr(),
+                    vk::KhrGetMemoryRequirements2Fn::name().as_ptr(),
+                    khr::Swapchain::name().as_ptr(),
+                ]
+            };
 
             let queue_create_info = [vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_family_index)
