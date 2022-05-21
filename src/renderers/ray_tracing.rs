@@ -189,7 +189,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         size: vk::Extent2D,
         images: &[vk::Image],
         _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
-        render_style: RenderStyle,
+        _render_style: RenderStyle,
     ) -> anyhow::Result<()> {
         let device = self.device;
         debug!("Set resolution: {size:?} images: {images:?}");
