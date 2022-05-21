@@ -338,6 +338,11 @@ impl VulkanApp {
             )
         }
     }
+    pub fn free_command_buffers(&self, cmd: &[vk::CommandBuffer]) {
+        unsafe {
+            self.device.free_command_buffers(self.command_pool, cmd);
+        }
+    }
 }
 
 impl Drop for VulkanApp {

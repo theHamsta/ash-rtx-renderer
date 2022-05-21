@@ -113,12 +113,14 @@ fn main() -> anyhow::Result<()> {
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
     for r in renderers.iter_mut() {
+        let cmd = vulkan_app.allocate_command_buffers(1)?[0];
         r.set_meshes(
             &meshes,
-            vulkan_app.allocate_command_buffers(1)?[0],
+            cmd,
             vulkan_app.graphics_queue(),
             vulkan_app.device_memory_properties(),
         )?;
+        vulkan_app.free_command_buffers(&[cmd]);
     }
     // Everything not moved into the event loop will not be dropped. So let renderers keep
     // references and drop manually here
