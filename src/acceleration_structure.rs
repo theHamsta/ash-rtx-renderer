@@ -201,7 +201,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
             std::mem::size_of::<vk::AccelerationStructureInstanceKHR>() * instances.len();
 
         let mut instance_buffer = Buffer::new(
-            &device,
+            device,
             device_memory_properties,
             &vk::BufferCreateInfo::default()
                 .size(instance_buffer_size as vk::DeviceSize)
@@ -349,9 +349,5 @@ impl<'device> TopLevelAccelerationStructure<'device> {
             },
             bottomlevel_as
         })
-    }
-
-    pub fn device(&self) -> &ash::Device {
-        self.buffer.device()
     }
 }
