@@ -1,4 +1,7 @@
-use crate::acceleration_structure::{AccelerationStructureData, TopLevelAccelerationStructure};
+use crate::{
+    acceleration_structure::{AccelerationStructureData, TopLevelAccelerationStructure},
+    device_mesh::Buffer,
+};
 use std::{mem::size_of, rc::Rc, time::Instant};
 
 use ash::vk::{self, ShaderStageFlags};
@@ -27,10 +30,16 @@ pub struct RayTrace<'device> {
     toplevel_as: Option<TopLevelAccelerationStructure<'device>>,
     raytracing_tracing_ext: ash::extensions::khr::RayTracingPipeline,
     acceleration_structure_ext: ash::extensions::khr::AccelerationStructure,
+    rt_pipeline_properties: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'device>,
+    sbt: Option<Buffer<'device>>,
 }
 
 impl<'device> RayTrace<'device> {
-    pub fn new(device: &'device ash::Device, instance: &ash::Instance) -> anyhow::Result<Self> {
+    pub fn new(
+        device: &'device ash::Device,
+        instance: &ash::Instance,
+        rt_pipeline_properties: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'device>,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             zoom: 1.0,
             meshes: Default::default(),
@@ -63,6 +72,8 @@ impl<'device> RayTrace<'device> {
                 instance, device,
             ),
             raytracing_tracing_ext: ash::extensions::khr::RayTracingPipeline::new(instance, device),
+            rt_pipeline_properties,
+            sbt: None,
         })
     }
 }
@@ -107,7 +118,6 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         _swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         trace!("draw for {self:?}");
-        if !self.meshes.is_empty() {}
         Ok(())
     }
 
@@ -170,7 +180,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         surface_format: ash::vk::SurfaceFormatKHR,
         size: vk::Extent2D,
         images: &[vk::Image],
-        _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
         _render_style: RenderStyle,
     ) -> anyhow::Result<()> {
         let device = self.device;
@@ -230,6 +240,11 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                             .stage_flags(vk::ShaderStageFlags::CLOSEST_HIT_KHR)
                             .binding(2),
+                        vk::DescriptorSetLayoutBinding::default()
+                            .descriptor_count(1)
+                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                            .stage_flags(vk::ShaderStageFlags::CLOSEST_HIT_KHR)
+                            .binding(3),
                     ])
                     .push_next(&mut binding_flags),
                 None,
@@ -238,17 +253,20 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         .unwrap();
         let max_recursion_depth = 1;
 
-        let (pipeline, pipeline_layout) = self.shader_pipeline.make_rtx_pipeline(
+        let (pipeline, pipeline_layout, sbt) = self.shader_pipeline.make_rtx_pipeline(
             device,
             &shader_groups,
             &self.raytracing_tracing_ext,
             descriptor_set_layout,
             max_recursion_depth,
+            device_memory_properties,
+            &self.rt_pipeline_properties,
             &[vk::PushConstantRange::default()
                 .offset(0)
                 .size(size_of::<PushConstants>().try_into()?)
                 .stage_flags(ShaderStageFlags::VERTEX)],
         )?;
+        self.sbt = Some(sbt);
         self.pipeline = Some(pipeline);
         self.pipeline_layout = Some(pipeline_layout);
         self.image_views = images
@@ -274,6 +292,87 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 unsafe { device.create_image_view(&create_view_info, None).unwrap() }
             })
             .collect();
+
+        let descriptor_sizes = [
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::ACCELERATION_STRUCTURE_KHR,
+                descriptor_count: 1,
+            },
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::STORAGE_IMAGE,
+                descriptor_count: 1,
+            },
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: 1,
+            },
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: 1,
+            },
+        ];
+
+        let descriptor_pool_info = vk::DescriptorPoolCreateInfo::default()
+            .pool_sizes(&descriptor_sizes)
+            .max_sets(1);
+
+        let descriptor_pool =
+            unsafe { device.create_descriptor_pool(&descriptor_pool_info, None) }?;
+
+        let mut count_allocate_info =
+            vk::DescriptorSetVariableDescriptorCountAllocateInfo::default().descriptor_counts(&[1]);
+
+        let descriptor_sets = unsafe {
+            device.allocate_descriptor_sets(
+                &vk::DescriptorSetAllocateInfo::default()
+                    .descriptor_pool(descriptor_pool)
+                    .set_layouts(&[descriptor_set_layout])
+                    .push_next(&mut count_allocate_info),
+            )
+        }
+        .unwrap();
+
+        let descriptor_set = descriptor_sets[0];
+
+        let accel_structs = [self.toplevel_as.handle()];
+        let mut accel_info = vk::WriteDescriptorSetAccelerationStructureKHR::default()
+            .acceleration_structures(&accel_structs);
+
+        let mut accel_write = vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR)
+            .push_next(&mut accel_info);
+
+        // This is only set by the builder for images, buffers, or views; need to set explicitly after
+        accel_write.descriptor_count = 1;
+
+        let image_info = [vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::GENERAL)
+            .image_view(self.image_views[0])];
+
+        let image_write = vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(1)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+            .image_info(&image_info);
+
+        let buffer_info = [vk::DescriptorBufferInfo::default()
+            .buffer()
+            .range(vk::WHOLE_SIZE)];
+
+        let buffers_write = vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(2)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&buffer_info);
+
+        unsafe {
+            device.update_descriptor_sets(&[accel_write, image_write, buffers_write], &[]);
+        }
 
         self.resolution = size.into();
         Ok(())

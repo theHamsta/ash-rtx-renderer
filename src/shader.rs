@@ -1,4 +1,4 @@
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::intrinsics::transmute;
 use std::io::Cursor;
 
@@ -6,6 +6,7 @@ use ash::vk::{VertexInputAttributeDescription, VertexInputBindingDescription};
 use ash::{util::read_spv, vk};
 use log::debug;
 
+use crate::device_mesh::Buffer;
 use crate::renderers::RenderStyle;
 
 pub struct Shader {
@@ -218,13 +219,15 @@ impl<'device> ShaderPipeline<'device> {
 
     pub fn make_rtx_pipeline(
         &self,
-        device: &ash::Device,
+        device: &'device ash::Device,
         shader_groups: &[vk::RayTracingShaderGroupCreateInfoKHR],
         raytracing_ext: &ash::extensions::khr::RayTracingPipeline,
         descriptor_set_layout: vk::DescriptorSetLayout,
         max_pipeline_ray_recursion_depth: u32,
+        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        rt_pipeline_properties: &vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
         push_constant_ranges: &[vk::PushConstantRange],
-    ) -> anyhow::Result<(vk::Pipeline, vk::PipelineLayout)> {
+    ) -> anyhow::Result<(vk::Pipeline, vk::PipelineLayout, Buffer<'device>)> {
         let layouts = vec![descriptor_set_layout];
         let layout_create_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&layouts)
@@ -256,6 +259,53 @@ impl<'device> ShaderPipeline<'device> {
             )
         }?[0];
 
-        Ok((pipeline, pipeline_layout))
+        let handle_size_aligned = aligned_size(
+            rt_pipeline_properties.shader_group_handle_size,
+            rt_pipeline_properties.shader_group_base_alignment,
+        ) as u64;
+
+        let sbt = {
+            let incoming_table_data = unsafe {
+                raytracing_ext.get_ray_tracing_shader_group_handles(
+                    pipeline,
+                    0,
+                    shader_groups.len() as u32,
+                    shader_groups.len() * rt_pipeline_properties.shader_group_handle_size as usize,
+                )
+            }?;
+
+            let table_size = shader_groups.len() * handle_size_aligned as usize;
+            let mut table_data = vec![0u8; table_size];
+
+            for i in 0..shader_groups.len() {
+                table_data[i * handle_size_aligned as usize
+                    ..i * handle_size_aligned as usize
+                        + rt_pipeline_properties.shader_group_handle_size as usize]
+                    .copy_from_slice(
+                        &incoming_table_data[i * rt_pipeline_properties.shader_group_handle_size
+                            as usize
+                            ..i * rt_pipeline_properties.shader_group_handle_size as usize
+                                + rt_pipeline_properties.shader_group_handle_size as usize],
+                    );
+            }
+
+            Buffer::new(
+                &device,
+                &device_memory_properties,
+                &vk::BufferCreateInfo::default()
+                    .size(table_size as u64)
+                    .usage(
+                        vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                            | vk::BufferUsageFlags::TRANSFER_SRC,
+                    ),
+                Some(&table_data),
+            )?
+        };
+
+        Ok((pipeline, pipeline_layout, sbt))
     }
+}
+
+fn aligned_size(value: u32, alignment: u32) -> u32 {
+    (value + alignment - 1) & !(alignment - 1)
 }

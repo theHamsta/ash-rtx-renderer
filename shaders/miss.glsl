@@ -1,9 +1,9 @@
 #version 460
 #pragma shader_stage(miss)
 
-#extension GL_NV_ray_tracing : require
+#extension GL_EXT_ray_tracing : require
 
-layout(location = 0) rayPayloadInNV vec3 hitValue;
+layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
 void main()
 {

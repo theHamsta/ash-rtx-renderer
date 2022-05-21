@@ -10,16 +10,16 @@ use crate::{
 
 pub struct AccelerationStructureData<'device> {
     structure: vk::AccelerationStructureKHR,
-    buffer: Buffer<'device>,
+    _buffer: Buffer<'device>,
     handle: vk::DeviceAddress,
     mesh: Option<Rc<DeviceMesh<'device>>>,
 }
 
 pub struct TopLevelAccelerationStructure<'device> {
     structure: vk::AccelerationStructureKHR,
-    buffer: Buffer<'device>,
+    _buffer: Buffer<'device>,
     handle: vk::DeviceAddress,
-    bottomlevel_as: Vec<(AccelerationStructureData<'device>, [f32; 12])>,
+    _bottomlevel_as: Vec<(AccelerationStructureData<'device>, [f32; 12])>,
 }
 
 impl<'device> AccelerationStructureData<'device> {
@@ -109,7 +109,7 @@ impl<'device> AccelerationStructureData<'device> {
         build_info.dst_acceleration_structure = bottom_as;
 
         let mut scratch_buffer = Buffer::new::<u8>(
-            &device,
+            device,
             device_memory_properties,
             &vk::BufferCreateInfo::default()
                 .size(size_info.build_scratch_size)
@@ -160,7 +160,7 @@ impl<'device> AccelerationStructureData<'device> {
             )
         };
         Ok(AccelerationStructureData {
-            buffer: bottom_as_buffer,
+            _buffer: bottom_as_buffer,
             structure: bottom_as,
             handle,
             mesh: Some(Rc::clone(&mesh)),
@@ -272,7 +272,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
             };
 
             let mut top_as_buffer = Buffer::new::<u8>(
-                &device,
+                device,
                 device_memory_properties,
                 &vk::BufferCreateInfo::default()
                     .size(size_info.acceleration_structure_size)
@@ -297,7 +297,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
             build_info.dst_acceleration_structure = top_as;
 
             let mut scratch_buffer = Buffer::new::<u8>(
-                &device,
+                device,
                 device_memory_properties,
                 &vk::BufferCreateInfo::default()
                     .size(size_info.build_scratch_size)
@@ -340,14 +340,18 @@ impl<'device> TopLevelAccelerationStructure<'device> {
 
         Ok(Self {
             structure: top_as,
-            buffer: top_as_buffer,
+            _buffer: top_as_buffer,
             handle: unsafe {
                 as_extension.get_acceleration_structure_device_address(
                     &vk::AccelerationStructureDeviceAddressInfoKHR::default()
                         .acceleration_structure(top_as),
                 )
             },
-            bottomlevel_as
+            _bottomlevel_as: bottomlevel_as
         })
+    }
+
+    pub fn handle(&self) -> u64 {
+        self.handle
     }
 }

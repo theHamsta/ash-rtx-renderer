@@ -27,7 +27,7 @@ struct Functions {
     swapchain: ash::extensions::khr::Swapchain,
 }
 
-pub struct VulkanApp {
+pub struct VulkanApp<'a> {
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
     _entry: ash::Entry,
@@ -39,9 +39,10 @@ pub struct VulkanApp {
     functions: Functions,
     command_pool: vk::CommandPool,
     device_memory_properties: vk::PhysicalDeviceMemoryProperties,
+    rt_pipeline_properties: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'a>,
 }
 
-impl VulkanApp {
+impl VulkanApp<'_> {
     pub fn new(window: &Window, with_raytracing: bool) -> anyhow::Result<Self> {
         unsafe {
             let surface_extensions = ash_window::enumerate_required_extensions(window)?;
@@ -209,6 +210,21 @@ impl VulkanApp {
             let device_memory_properties =
                 instance.get_physical_device_memory_properties(physical_device);
 
+            let mut rt_pipeline_properties =
+                vk::PhysicalDeviceRayTracingPipelinePropertiesKHR::default();
+
+            if with_raytracing {
+                let mut physical_device_properties2 =
+                    vk::PhysicalDeviceProperties2::default().push_next(&mut rt_pipeline_properties);
+
+                unsafe {
+                    instance.get_physical_device_properties2(
+                        physical_device,
+                        &mut physical_device_properties2,
+                    );
+                }
+            }
+
             Ok(Self {
                 _entry: entry,
                 instance,
@@ -223,6 +239,7 @@ impl VulkanApp {
                     surface: surface_fn,
                     swapchain: swapchain_fn,
                 },
+                rt_pipeline_properties,
                 device_memory_properties,
             })
         }
@@ -343,9 +360,13 @@ impl VulkanApp {
             self.device.free_command_buffers(self.command_pool, cmd);
         }
     }
+
+    pub fn rt_pipeline_properties(&self) -> vk::PhysicalDeviceRayTracingPipelinePropertiesKHR {
+        self.rt_pipeline_properties
+    }
 }
 
-impl Drop for VulkanApp {
+impl Drop for VulkanApp<'_> {
     fn drop(&mut self) {
         unsafe {
             let _ = self.device.device_wait_idle();

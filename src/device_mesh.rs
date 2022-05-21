@@ -93,12 +93,6 @@ impl<'device> Buffer<'device> {
         }
     }
 
-    /// Get the buffer's device.
-    #[must_use]
-    pub fn device(&self) -> &ash::Device {
-        self.device
-    }
-
     /// Get a mutable reference to the buffer's buffer.
     #[must_use]
     pub fn buffer_mut(&mut self) -> &mut vk::Buffer {
@@ -116,7 +110,6 @@ pub enum AttributeType {
 pub struct DeviceMesh<'device> {
     mesh: Rc<Mesh>,
     buffers: HashMap<AttributeType, Buffer<'device>>,
-    device: &'device ash::Device,
 }
 
 impl<'device> DeviceMesh<'device> {
@@ -183,7 +176,6 @@ impl<'device> DeviceMesh<'device> {
         Ok(Self {
             mesh: Rc::clone(mesh),
             buffers,
-            device,
         })
     }
 
@@ -213,11 +205,5 @@ impl<'device> DeviceMesh<'device> {
     #[must_use]
     pub fn mesh(&self) -> &Mesh {
         self.mesh.as_ref()
-    }
-
-    /// Get the device mesh's device.
-    #[must_use]
-    pub fn device(&self) -> &ash::Device {
-        self.device
     }
 }

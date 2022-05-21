@@ -94,7 +94,11 @@ fn main() -> anyhow::Result<()> {
     let mut renderers = vec![raster];
 
     if with_raytracing {
-        let raytrace = RendererImpl::RayTrace(RayTrace::new(device, vulkan_app.instance())?);
+        let raytrace = RendererImpl::RayTrace(RayTrace::new(
+            device,
+            vulkan_app.instance(),
+            vulkan_app.rt_pipeline_properties(),
+        )?);
         renderers.push(raytrace);
     }
     let color_sine = RendererImpl::ColorSine(ColorSine::default());
