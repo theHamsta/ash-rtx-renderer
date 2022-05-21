@@ -76,7 +76,16 @@ fn main() -> anyhow::Result<()> {
     let window = WindowBuilder::new()
         .with_position(winit::dpi::PhysicalPosition::new(1300i32, 800))
         .build(&event_loop)?;
-    let mut vulkan_app = VulkanApp::new(&window, !args.no_raytracing)?;
+    let mut with_raytracing = !args.no_raytracing;
+    let mut vulkan_app = VulkanApp::new(&window, with_raytracing).or_else(|err| {
+        if with_raytracing {
+            error!("Failed to initialize with raytracing (is it supported by driver and hardware?). Trying again without!");
+            with_raytracing = false;
+            VulkanApp::new(&window, false)
+        } else {
+            Err(err)
+        }
+    })?;
 
     // Device must be 'static as it must outlive structs moved into eventloop referencing it
     let device = Box::leak(Box::new(vulkan_app.device().clone()));
@@ -84,7 +93,7 @@ fn main() -> anyhow::Result<()> {
     let raster = RendererImpl::Raster(Raster::new(device)?);
     let mut renderers = vec![raster];
 
-    if !args.no_raytracing {
+    if with_raytracing {
         let raytrace = RendererImpl::RayTrace(RayTrace::new(device, vulkan_app.instance())?);
         renderers.push(raytrace);
     }
@@ -99,7 +108,7 @@ fn main() -> anyhow::Result<()> {
                 device,
                 vulkan_app.device_memory_properties(),
                 mesh,
-                !args.no_raytracing,
+                with_raytracing,
             )?))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
