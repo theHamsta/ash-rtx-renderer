@@ -2,6 +2,7 @@ use std::{mem::size_of, rc::Rc};
 
 use anyhow::Context;
 use ash::vk;
+use log::debug;
 
 use crate::{
     device_mesh::{Buffer, DeviceMesh},
@@ -32,6 +33,7 @@ impl<'device> AccelerationStructureData<'device> {
         as_extension: &ash::extensions::khr::AccelerationStructure,
         graphics_queue: vk::Queue,
     ) -> anyhow::Result<Self> {
+        debug!("Building bottom level acceleration structure");
         let geometry = vk::AccelerationStructureGeometryKHR::default()
             .geometry_type(vk::GeometryTypeKHR::TRIANGLES)
             .geometry(vk::AccelerationStructureGeometryDataKHR {
@@ -158,6 +160,7 @@ impl<'device> AccelerationStructureData<'device> {
                     .acceleration_structure(bottom_as),
             )
         };
+        debug!("Built bottom level acceleration structure");
         Ok(AccelerationStructureData {
             _buffer: bottom_as_buffer,
             _structure: bottom_as,
@@ -187,6 +190,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
         graphics_queue: vk::Queue,
         attributes_per_instance: u32,
     ) -> anyhow::Result<Self> {
+        debug!("Building top level acceleration structure");
         let instances: Vec<_> = bottomlevel_as
             .iter()
             .enumerate()
@@ -339,6 +343,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
             (top_as, top_as_buffer)
         };
 
+        debug!("Built top level acceleration structure");
         Ok(Self {
             structure: top_as,
             _buffer: top_as_buffer,

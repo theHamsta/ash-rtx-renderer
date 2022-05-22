@@ -105,7 +105,8 @@ impl<'device> RayTrace<'device> {
     fn destroy_images(&mut self) -> anyhow::Result<()> {
         unsafe {
             let device = self.device;
-            device.device_wait_idle()?;
+            //device.device_wait_idle()?;
+            device.device_wait_idle().unwrap();
             for img in self.image_views.iter() {
                 device.destroy_image_view(*img, None);
             }
