@@ -105,7 +105,7 @@ impl<'device> AccelerationStructureData<'device> {
             .offset(0);
 
         let bottom_as =
-            unsafe { as_extension.create_acceleration_structure(&as_create_info, None) }.unwrap();
+            unsafe { as_extension.create_acceleration_structure(&as_create_info, None) }?;
 
         build_info.dst_acceleration_structure = bottom_as;
 
@@ -129,13 +129,11 @@ impl<'device> AccelerationStructureData<'device> {
             },
         };
         unsafe {
-            device
-                .begin_command_buffer(
-                    cmd,
-                    &vk::CommandBufferBeginInfo::default()
-                        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-                )
-                .unwrap();
+            device.begin_command_buffer(
+                cmd,
+                &vk::CommandBufferBeginInfo::default()
+                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+            )?;
 
             as_extension.cmd_build_acceleration_structures(
                 cmd,
@@ -151,7 +149,7 @@ impl<'device> AccelerationStructureData<'device> {
                 )
                 .context("queue submit failed.")?;
 
-            device.queue_wait_idle(graphics_queue).unwrap();
+            device.queue_wait_idle(graphics_queue)?;
         }
 
         let handle = unsafe {
@@ -226,13 +224,11 @@ impl<'device> TopLevelAccelerationStructure<'device> {
                 .transform_offset(0);
 
             unsafe {
-                device
-                    .begin_command_buffer(
-                        cmd,
-                        &vk::CommandBufferBeginInfo::default()
-                            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-                    )
-                    .unwrap();
+                device.begin_command_buffer(
+                    cmd,
+                    &vk::CommandBufferBeginInfo::default()
+                        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+                )?;
                 let memory_barrier = vk::MemoryBarrier::default()
                     .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
                     .dst_access_mask(vk::AccessFlags::ACCELERATION_STRUCTURE_WRITE_KHR);
@@ -298,8 +294,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
                 .offset(0);
 
             let top_as =
-                unsafe { as_extension.create_acceleration_structure(&as_create_info, None) }
-                    .unwrap();
+                unsafe { as_extension.create_acceleration_structure(&as_create_info, None) }?;
 
             build_info.dst_acceleration_structure = top_as;
 
@@ -329,7 +324,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
                     &[build_info],
                     &[&[build_range_info]],
                 );
-                device.end_command_buffer(cmd).unwrap();
+                device.end_command_buffer(cmd)?;
                 device
                     .queue_submit(
                         graphics_queue,
@@ -338,7 +333,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
                     )
                     .expect("queue submit failed.");
 
-                device.queue_wait_idle(graphics_queue).unwrap();
+                device.queue_wait_idle(graphics_queue)?;
             }
 
             (top_as, top_as_buffer)
