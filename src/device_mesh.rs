@@ -98,6 +98,14 @@ impl<'device> Buffer<'device> {
     pub fn buffer_mut(&mut self) -> &mut vk::Buffer {
         &mut self.buffer
     }
+
+    pub fn device_address(&self) -> vk::DeviceAddress {
+        unsafe {
+            self.device.get_buffer_device_address(
+                &vk::BufferDeviceAddressInfo::default().buffer(self.buffer),
+            )
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -189,8 +197,16 @@ impl<'device> DeviceMesh<'device> {
         self.buffers.get(&AttributeType::Index).map(|b| &b.buffer)
     }
 
+    pub fn indices_device_address(&self) -> Option<vk::DeviceAddress> {
+        self.buffers.get(&AttributeType::Index).map(|b| b.device_address())
+    }
+
     pub fn normals(&self) -> Option<&vk::Buffer> {
         self.buffers.get(&AttributeType::Normals).map(|b| &b.buffer)
+    }
+
+    pub fn normals_device_address(&self) -> Option<vk::DeviceAddress> {
+        self.buffers.get(&AttributeType::Normals).map(|b| b.device_address())
     }
 
     pub fn num_triangles(&self) -> usize {

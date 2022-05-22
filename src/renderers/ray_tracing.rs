@@ -2,7 +2,12 @@ use crate::{
     acceleration_structure::{AccelerationStructureData, TopLevelAccelerationStructure},
     device_mesh::Buffer,
 };
-use std::{mem::size_of, rc::Rc, time::Instant};
+use std::{
+    io::{Cursor, Write},
+    mem::size_of,
+    rc::Rc,
+    time::Instant,
+};
 
 use ash::vk::{self, ShaderStageFlags};
 use cgmath::{Point3, Vector3, Vector4};
@@ -14,7 +19,6 @@ use crate::{device_mesh::DeviceMesh, shader::ShaderPipeline, uniforms::PushConst
 use super::{RenderStyle, Renderer};
 
 pub struct RayTrace<'device> {
-    meshes: Vec<Rc<DeviceMesh<'device>>>,
     image_views: Vec<vk::ImageView>,
     device: &'device ash::Device,
     shader_pipeline: ShaderPipeline<'device>,
@@ -34,6 +38,8 @@ pub struct RayTrace<'device> {
     sbt: Option<Buffer<'device>>,
 }
 
+static NUM_ATTRIBUTES: usize = 2;
+
 impl<'device> RayTrace<'device> {
     pub fn new(
         device: &'device ash::Device,
@@ -42,14 +48,14 @@ impl<'device> RayTrace<'device> {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             zoom: 1.0,
-            meshes: Default::default(),
             image_views: Default::default(),
             device,
             shader_pipeline: ShaderPipeline::new(
                 device,
                 &[
-                    &include_bytes!("../../shaders/triangle.vert.spirv")[..],
-                    &include_bytes!("../../shaders/triangle.frag.spirv")[..],
+                    &include_bytes!("../../shaders/raygen.glsl.spirv")[..],
+                    &include_bytes!("../../shaders/closest_hit.glsl.spirv")[..],
+                    &include_bytes!("../../shaders/miss.glsl.spirv")[..],
                 ],
             )?,
             translation: Point3 {
@@ -75,6 +81,13 @@ impl<'device> RayTrace<'device> {
             rt_pipeline_properties,
             sbt: None,
         })
+    }
+
+    fn num_instances(&self) -> u32 {
+        self.toplevel_as
+            .as_ref()
+            .map(|a| a.bottomlevel_as().len() as u32)
+            .unwrap_or(0)
     }
 }
 
@@ -128,8 +141,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         graphics_queue: vk::Queue,
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
     ) -> anyhow::Result<()> {
-        self.translation = self
-            .meshes
+        self.translation = meshes
             .iter()
             .flat_map(|mesh| mesh.mesh().positions().iter())
             .fold(
@@ -171,6 +183,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             device_memory_properties,
             &self.acceleration_structure_ext,
             graphics_queue,
+            NUM_ATTRIBUTES as u32,
         )?);
         Ok(())
     }
@@ -189,7 +202,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         self.size = size;
         self.update_push_constants();
 
-        let shader_groups = vec![
+        let mut shader_groups = vec![
             // group0 = [ raygen ]
             vk::RayTracingShaderGroupCreateInfoKHR::default()
                 .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
@@ -197,13 +210,19 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 .closest_hit_shader(vk::SHADER_UNUSED_KHR)
                 .any_hit_shader(vk::SHADER_UNUSED_KHR)
                 .intersection_shader(vk::SHADER_UNUSED_KHR),
-            // group1 = [ chit ]
-            vk::RayTracingShaderGroupCreateInfoKHR::default()
-                .ty(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP)
-                .general_shader(vk::SHADER_UNUSED_KHR)
-                .closest_hit_shader(1)
-                .any_hit_shader(vk::SHADER_UNUSED_KHR)
-                .intersection_shader(vk::SHADER_UNUSED_KHR),
+        ];
+        for _ in 0..self.num_instances() {
+            shader_groups.push(
+                // group1 = [ chit ]
+                vk::RayTracingShaderGroupCreateInfoKHR::default()
+                    .ty(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP)
+                    .general_shader(vk::SHADER_UNUSED_KHR)
+                    .closest_hit_shader(1)
+                    .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                    .intersection_shader(vk::SHADER_UNUSED_KHR),
+            );
+        }
+        shader_groups.push(
             // group2 = [ miss ]
             vk::RayTracingShaderGroupCreateInfoKHR::default()
                 .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
@@ -211,11 +230,10 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 .closest_hit_shader(vk::SHADER_UNUSED_KHR)
                 .any_hit_shader(vk::SHADER_UNUSED_KHR)
                 .intersection_shader(vk::SHADER_UNUSED_KHR),
-        ];
+        );
 
         let descriptor_set_layout = unsafe {
             let binding_flags_inner = [
-                vk::DescriptorBindingFlagsEXT::empty(),
                 vk::DescriptorBindingFlagsEXT::empty(),
                 vk::DescriptorBindingFlagsEXT::empty(),
             ];
@@ -235,37 +253,122 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
                             .stage_flags(vk::ShaderStageFlags::RAYGEN_KHR)
                             .binding(1),
-                        vk::DescriptorSetLayoutBinding::default()
-                            .descriptor_count(1)
-                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                            .stage_flags(vk::ShaderStageFlags::CLOSEST_HIT_KHR)
-                            .binding(2),
-                        vk::DescriptorSetLayoutBinding::default()
-                            .descriptor_count(1)
-                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                            .stage_flags(vk::ShaderStageFlags::CLOSEST_HIT_KHR)
-                            .binding(3),
                     ])
                     .push_next(&mut binding_flags),
                 None,
             )
-        }
-        .unwrap();
+        }?;
         let max_recursion_depth = 1;
 
-        let (pipeline, pipeline_layout, sbt) = self.shader_pipeline.make_rtx_pipeline(
+        let (pipeline, pipeline_layout) = self.shader_pipeline.make_rtx_pipeline(
             device,
             &shader_groups,
             &self.raytracing_tracing_ext,
             descriptor_set_layout,
             max_recursion_depth,
-            device_memory_properties,
-            &self.rt_pipeline_properties,
             &[vk::PushConstantRange::default()
                 .offset(0)
                 .size(size_of::<PushConstants>().try_into()?)
-                .stage_flags(ShaderStageFlags::VERTEX)],
+                .stage_flags(ShaderStageFlags::RAYGEN_KHR)],
         )?;
+
+        let sbt = {
+            let handle_size = self.rt_pipeline_properties.shader_group_handle_size;
+            let raygen_data = unsafe {
+                self.raytracing_tracing_ext
+                    .get_ray_tracing_shader_group_handles(pipeline, 0, 0, handle_size as usize)
+            }?;
+            let chit_data = unsafe {
+                self.raytracing_tracing_ext
+                    .get_ray_tracing_shader_group_handles(
+                        pipeline,
+                        1,
+                        self.num_instances(),
+                        handle_size as usize * self.num_instances() as usize,
+                    )
+            }?;
+            let missdata = unsafe {
+                self.raytracing_tracing_ext
+                    .get_ray_tracing_shader_group_handles(
+                        pipeline,
+                        1,
+                        1 + self.num_instances(),
+                        handle_size as usize,
+                    )
+            }?;
+
+            let table_size = aligned_size(
+                raygen_data.len() as u32,
+                self.rt_pipeline_properties.shader_group_base_alignment,
+            ) + self.num_instances()
+                * aligned_size(
+                    chit_data.len() as u32 + 2 * NUM_ATTRIBUTES as u32,
+                    self.rt_pipeline_properties.shader_group_base_alignment,
+                )
+                + aligned_size(
+                    missdata.len() as u32,
+                    self.rt_pipeline_properties.shader_group_base_alignment,
+                );
+            let mut table_data = vec![0u8; table_size as usize];
+            let mut cur = Cursor::new(&mut table_data);
+            let mut written = 0;
+            written += cur.write(&raygen_data)?;
+            written = aligned_size(
+                written as u32,
+                self.rt_pipeline_properties.shader_group_base_alignment,
+            ) as usize;
+            cur.set_position(written as u64);
+            for (i, mesh) in self
+                .toplevel_as
+                .as_ref()
+                .unwrap()
+                .meshes()
+                .iter()
+                .enumerate()
+            {
+                written += cur.write(
+                    &chit_data[i * self.rt_pipeline_properties.shader_group_handle_size as usize
+                        ..((i + 1)
+                            * self.rt_pipeline_properties.shader_group_handle_size as usize)],
+                )?;
+                written += cur.write(
+                    &mesh
+                        .indices_device_address()
+                        .ok_or_else(|| anyhow::anyhow!("No indices found on mesh"))?
+                        .to_le_bytes(),
+                )?;
+                written += cur.write(
+                    &mesh
+                        .normals_device_address()
+                        .ok_or_else(|| anyhow::anyhow!("No normals found on mesh"))?
+                        .to_le_bytes(),
+                )?;
+                written = aligned_size(
+                    written as u32,
+                    self.rt_pipeline_properties.shader_group_base_alignment,
+                ) as usize;
+                cur.set_position(written as u64);
+            }
+            written += cur.write(&missdata)?;
+            written = aligned_size(
+                written as u32,
+                self.rt_pipeline_properties.shader_group_base_alignment,
+            ) as usize;
+            assert_eq!(written, table_size as usize);
+
+            Buffer::new(
+                device,
+                device_memory_properties,
+                &vk::BufferCreateInfo::default()
+                    .size(table_size as u64)
+                    .usage(
+                        vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                            | vk::BufferUsageFlags::TRANSFER_SRC,
+                    ),
+                Some(&table_data),
+            )?
+        };
+
         self.sbt = Some(sbt);
         self.pipeline = Some(pipeline);
         self.pipeline_layout = Some(pipeline_layout);
@@ -302,14 +405,6 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 ty: vk::DescriptorType::STORAGE_IMAGE,
                 descriptor_count: 1,
             },
-            vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-            },
-            vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count: 1,
-            },
         ];
 
         let descriptor_pool_info = vk::DescriptorPoolCreateInfo::default()
@@ -329,12 +424,15 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                     .set_layouts(&[descriptor_set_layout])
                     .push_next(&mut count_allocate_info),
             )
-        }
-        .unwrap();
+        }?;
 
         let descriptor_set = descriptor_sets[0];
 
-        let accel_structs = [self.toplevel_as.handle()];
+        let accel_structs = [self
+            .toplevel_as
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No toplevel acceleration structure"))?
+            .structure()];
         let mut accel_info = vk::WriteDescriptorSetAccelerationStructureKHR::default()
             .acceleration_structures(&accel_structs);
 
@@ -359,19 +457,8 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
             .image_info(&image_info);
 
-        let buffer_info = [vk::DescriptorBufferInfo::default()
-            .buffer()
-            .range(vk::WHOLE_SIZE)];
-
-        let buffers_write = vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(2)
-            .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .buffer_info(&buffer_info);
-
         unsafe {
-            device.update_descriptor_sets(&[accel_write, image_write, buffers_write], &[]);
+            device.update_descriptor_sets(&[accel_write, image_write], &[]);
         }
 
         self.resolution = size.into();
@@ -437,4 +524,8 @@ impl Drop for RayTrace<'_> {
     fn drop(&mut self) {
         self.destroy_images();
     }
+}
+
+fn aligned_size(value: u32, alignment: u32) -> u32 {
+    (value + alignment - 1) & !(alignment - 1)
 }

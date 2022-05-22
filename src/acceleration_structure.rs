@@ -8,8 +8,9 @@ use crate::{
     mesh::Position,
 };
 
+// TODO: destroy
 pub struct AccelerationStructureData<'device> {
-    structure: vk::AccelerationStructureKHR,
+    _structure: vk::AccelerationStructureKHR,
     _buffer: Buffer<'device>,
     handle: vk::DeviceAddress,
     mesh: Option<Rc<DeviceMesh<'device>>>,
@@ -18,8 +19,8 @@ pub struct AccelerationStructureData<'device> {
 pub struct TopLevelAccelerationStructure<'device> {
     structure: vk::AccelerationStructureKHR,
     _buffer: Buffer<'device>,
-    handle: vk::DeviceAddress,
-    _bottomlevel_as: Vec<(AccelerationStructureData<'device>, [f32; 12])>,
+    _handle: vk::DeviceAddress,
+    bottomlevel_as: Vec<(AccelerationStructureData<'device>, [f32; 12])>,
 }
 
 impl<'device> AccelerationStructureData<'device> {
@@ -161,7 +162,7 @@ impl<'device> AccelerationStructureData<'device> {
         };
         Ok(AccelerationStructureData {
             _buffer: bottom_as_buffer,
-            structure: bottom_as,
+            _structure: bottom_as,
             handle,
             mesh: Some(Rc::clone(&mesh)),
         })
@@ -171,6 +172,10 @@ impl<'device> AccelerationStructureData<'device> {
         vk::AccelerationStructureReferenceKHR {
             device_handle: self.handle,
         }
+    }
+
+    pub fn mesh(&self) -> Option<&Rc<DeviceMesh>> {
+        self.mesh.as_ref()
     }
 }
 
@@ -182,14 +187,16 @@ impl<'device> TopLevelAccelerationStructure<'device> {
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
         as_extension: &ash::extensions::khr::AccelerationStructure,
         graphics_queue: vk::Queue,
+        attributes_per_instance: u32,
     ) -> anyhow::Result<Self> {
         let instances: Vec<_> = bottomlevel_as
             .iter()
+            .enumerate()
             .map(
-                |(bottomlevel_as, transform)| vk::AccelerationStructureInstanceKHR {
+                |(i, (bottomlevel_as, transform))| vk::AccelerationStructureInstanceKHR {
                     transform: vk::TransformMatrixKHR { matrix: *transform },
                     instance_shader_binding_table_record_offset_and_flags: ash::vk::Packed24_8::new(
-                        0,
+                        attributes_per_instance * i as u32, //TODO: make attribute
                         vk::GeometryInstanceFlagsKHR::TRIANGLE_FACING_CULL_DISABLE.as_raw() as u8,
                     ),
                     instance_custom_index_and_mask: ash::vk::Packed24_8::new(0, 0xff),
@@ -341,17 +348,28 @@ impl<'device> TopLevelAccelerationStructure<'device> {
         Ok(Self {
             structure: top_as,
             _buffer: top_as_buffer,
-            handle: unsafe {
+            _handle: unsafe {
                 as_extension.get_acceleration_structure_device_address(
                     &vk::AccelerationStructureDeviceAddressInfoKHR::default()
                         .acceleration_structure(top_as),
                 )
             },
-            _bottomlevel_as: bottomlevel_as
+            bottomlevel_as,
         })
     }
 
-    pub fn handle(&self) -> u64 {
-        self.handle
+    pub fn structure(&self) -> vk::AccelerationStructureKHR {
+        self.structure
+    }
+
+    pub fn bottomlevel_as(&self) -> &[(AccelerationStructureData, [f32; 12])] {
+        self.bottomlevel_as.as_ref()
+    }
+
+    pub fn meshes(&self) -> Vec<&Rc<DeviceMesh>> {
+        self.bottomlevel_as()
+            .iter()
+            .flat_map(|a| a.0.mesh())
+            .collect()
     }
 }

@@ -27,7 +27,7 @@ struct Functions {
     swapchain: ash::extensions::khr::Swapchain,
 }
 
-pub struct VulkanApp<'a> {
+pub struct VulkanApp {
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
     _entry: ash::Entry,
@@ -39,10 +39,10 @@ pub struct VulkanApp<'a> {
     functions: Functions,
     command_pool: vk::CommandPool,
     device_memory_properties: vk::PhysicalDeviceMemoryProperties,
-    rt_pipeline_properties: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'a>,
+    physical_device: vk::PhysicalDevice,
 }
 
-impl VulkanApp<'_> {
+impl VulkanApp {
     pub fn new(window: &Window, with_raytracing: bool) -> anyhow::Result<Self> {
         unsafe {
             let surface_extensions = ash_window::enumerate_required_extensions(window)?;
@@ -217,12 +217,10 @@ impl VulkanApp<'_> {
                 let mut physical_device_properties2 =
                     vk::PhysicalDeviceProperties2::default().push_next(&mut rt_pipeline_properties);
 
-                unsafe {
-                    instance.get_physical_device_properties2(
-                        physical_device,
-                        &mut physical_device_properties2,
-                    );
-                }
+                instance.get_physical_device_properties2(
+                    physical_device,
+                    &mut physical_device_properties2,
+                );
             }
 
             Ok(Self {
@@ -235,11 +233,11 @@ impl VulkanApp<'_> {
                 graphics_queue,
                 device,
                 command_pool,
+                physical_device,
                 functions: Functions {
                     surface: surface_fn,
                     swapchain: swapchain_fn,
                 },
-                rt_pipeline_properties,
                 device_memory_properties,
             })
         }
@@ -361,12 +359,28 @@ impl VulkanApp<'_> {
         }
     }
 
-    pub fn rt_pipeline_properties(&self) -> vk::PhysicalDeviceRayTracingPipelinePropertiesKHR {
-        self.rt_pipeline_properties
+    pub fn rt_pipeline_properties(physical_device: vk::PhysicalDevice, instance: ash::Instance) -> vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'static> {
+        let mut rt_pipeline_properties =
+            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR::default();
+
+        let mut physical_device_properties2 =
+            vk::PhysicalDeviceProperties2::default().push_next(&mut rt_pipeline_properties);
+
+        unsafe {
+            instance.get_physical_device_properties2(
+                physical_device,
+                &mut physical_device_properties2,
+            );
+        }
+        rt_pipeline_properties
+    }
+
+    pub fn physical_device(&self) -> vk::PhysicalDevice {
+        self.physical_device
     }
 }
 
-impl Drop for VulkanApp<'_> {
+impl Drop for VulkanApp {
     fn drop(&mut self) {
         unsafe {
             let _ = self.device.device_wait_idle();

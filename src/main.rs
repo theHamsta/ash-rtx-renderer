@@ -97,7 +97,10 @@ fn main() -> anyhow::Result<()> {
         let raytrace = RendererImpl::RayTrace(RayTrace::new(
             device,
             vulkan_app.instance(),
-            vulkan_app.rt_pipeline_properties(),
+            VulkanApp::rt_pipeline_properties(
+                vulkan_app.physical_device(),
+                vulkan_app.instance().clone(),
+            ), // hack due two weird lifetime requirements of vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
         )?);
         renderers.push(raytrace);
     }
