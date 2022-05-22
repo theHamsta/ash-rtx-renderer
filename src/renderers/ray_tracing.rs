@@ -35,6 +35,7 @@ pub struct RayTrace<'device> {
     raytracing_tracing_ext: ash::extensions::khr::RayTracingPipeline,
     acceleration_structure_ext: ash::extensions::khr::AccelerationStructure,
     rt_pipeline_properties: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'device>,
+    descriptor_set: Option<vk::DescriptorSet>,
     sbt: Option<Buffer<'device>>,
 }
 
@@ -80,6 +81,7 @@ impl<'device> RayTrace<'device> {
             raytracing_tracing_ext: ash::extensions::khr::RayTracingPipeline::new(instance, device),
             rt_pipeline_properties,
             sbt: None,
+            descriptor_set: None,
         })
     }
 
@@ -124,13 +126,99 @@ impl<'device> RayTrace<'device> {
 impl<'device> Renderer<'device> for RayTrace<'device> {
     fn draw(
         &self,
-        _device: &ash::Device,
-        _cmd: vk::CommandBuffer,
+        device: &ash::Device,
+        cmd: vk::CommandBuffer,
         _image: vk::Image,
         _start_instant: Instant,
-        _swapchain_idx: usize,
+        swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         trace!("draw for {self:?}");
+        if self.toplevel_as.is_some() {
+            let accel_structs = [self
+                .toplevel_as
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("No toplevel acceleration structure"))?
+                .structure()];
+            let mut accel_info = vk::WriteDescriptorSetAccelerationStructureKHR::default()
+                .acceleration_structures(&accel_structs);
+
+            let mut accel_write = vk::WriteDescriptorSet::default()
+                .dst_set(self.descriptor_set.unwrap())
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR)
+                .push_next(&mut accel_info);
+
+            // This is only set by the builder for images, buffers, or views; need to set explicitly after
+            accel_write.descriptor_count = 1;
+
+            let image_info = [vk::DescriptorImageInfo::default()
+                .image_layout(vk::ImageLayout::GENERAL)
+                .image_view(self.image_views[swapchain_idx])];
+
+            // TODO: Probably the image should be a PushConstant
+            let image_write = vk::WriteDescriptorSet::default()
+                .dst_set(self.descriptor_set.unwrap())
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+                .image_info(&image_info);
+
+            unsafe {
+                device.update_descriptor_sets(&[accel_write, image_write], &[]);
+            }
+
+            {
+                let sbt_address = self.sbt.as_ref().unwrap().device_address();
+
+                let aligned_size = aligned_size(
+                    self.rt_pipeline_properties.shader_group_handle_size,
+                    self.rt_pipeline_properties.shader_group_base_alignment,
+                ) as u64;
+                let sbt_raygen_region = vk::StridedDeviceAddressRegionKHR::default()
+                    .device_address(sbt_address)
+                    .size(aligned_size)
+                    .stride(aligned_size);
+
+                let sbt_miss_region = vk::StridedDeviceAddressRegionKHR::default()
+                    .device_address(sbt_address + (self.num_instances() as u64) * aligned_size)
+                    .size(aligned_size)
+                    .stride(aligned_size);
+
+                let sbt_hit_region = vk::StridedDeviceAddressRegionKHR::default()
+                    .device_address(sbt_address + (self.num_instances() as u64 + 1) * aligned_size)
+                    .size(aligned_size)
+                    .stride(aligned_size);
+
+                let sbt_call_region = vk::StridedDeviceAddressRegionKHR::default();
+
+                unsafe {
+                    device.cmd_bind_pipeline(
+                        cmd,
+                        vk::PipelineBindPoint::RAY_TRACING_KHR,
+                        self.pipeline.unwrap(),
+                    );
+                    device.cmd_bind_descriptor_sets(
+                        cmd,
+                        vk::PipelineBindPoint::RAY_TRACING_KHR,
+                        self.pipeline_layout.unwrap(),
+                        0,
+                        &[self.descriptor_set.unwrap()],
+                        &[],
+                    );
+                    self.raytracing_tracing_ext.cmd_trace_rays(
+                        cmd,
+                        &sbt_raygen_region,
+                        &sbt_miss_region,
+                        &sbt_hit_region,
+                        &sbt_call_region,
+                        self.size.width,
+                        self.size.height,
+                        1,
+                    );
+                }
+            }
+        }
         Ok(())
     }
 
@@ -427,39 +515,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         }?;
 
         let descriptor_set = descriptor_sets[0];
-
-        let accel_structs = [self
-            .toplevel_as
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No toplevel acceleration structure"))?
-            .structure()];
-        let mut accel_info = vk::WriteDescriptorSetAccelerationStructureKHR::default()
-            .acceleration_structures(&accel_structs);
-
-        let mut accel_write = vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(0)
-            .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR)
-            .push_next(&mut accel_info);
-
-        // This is only set by the builder for images, buffers, or views; need to set explicitly after
-        accel_write.descriptor_count = 1;
-
-        let image_info = [vk::DescriptorImageInfo::default()
-            .image_layout(vk::ImageLayout::GENERAL)
-            .image_view(self.image_views[0])];
-
-        let image_write = vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(1)
-            .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-            .image_info(&image_info);
-
-        unsafe {
-            device.update_descriptor_sets(&[accel_write, image_write], &[]);
-        }
+        self.descriptor_set = Some(descriptor_set);
 
         self.resolution = size.into();
         Ok(())

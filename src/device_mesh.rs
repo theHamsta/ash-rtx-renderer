@@ -93,18 +93,16 @@ impl<'device> Buffer<'device> {
         }
     }
 
-    /// Get a mutable reference to the buffer's buffer.
-    #[must_use]
-    pub fn buffer_mut(&mut self) -> &mut vk::Buffer {
-        &mut self.buffer
-    }
-
     pub fn device_address(&self) -> vk::DeviceAddress {
         unsafe {
             self.device.get_buffer_device_address(
                 &vk::BufferDeviceAddressInfo::default().buffer(self.buffer),
             )
         }
+    }
+
+    pub fn buffer(&self) -> vk::Buffer {
+        self.buffer
     }
 }
 

@@ -85,7 +85,7 @@ impl<'device> AccelerationStructureData<'device> {
             )
         };
 
-        let mut bottom_as_buffer = Buffer::new::<u8>(
+        let bottom_as_buffer = Buffer::new::<u8>(
             device,
             device_memory_properties,
             &vk::BufferCreateInfo::default()
@@ -101,7 +101,7 @@ impl<'device> AccelerationStructureData<'device> {
         let as_create_info = vk::AccelerationStructureCreateInfoKHR::default()
             .ty(build_info.ty)
             .size(size_info.acceleration_structure_size)
-            .buffer(*bottom_as_buffer.buffer_mut())
+            .buffer(bottom_as_buffer.buffer())
             .offset(0);
 
         let bottom_as =
@@ -109,7 +109,7 @@ impl<'device> AccelerationStructureData<'device> {
 
         build_info.dst_acceleration_structure = bottom_as;
 
-        let mut scratch_buffer = Buffer::new::<u8>(
+        let scratch_buffer = Buffer::new::<u8>(
             device,
             device_memory_properties,
             &vk::BufferCreateInfo::default()
@@ -124,7 +124,7 @@ impl<'device> AccelerationStructureData<'device> {
         build_info.scratch_data = vk::DeviceOrHostAddressKHR {
             device_address: unsafe {
                 device.get_buffer_device_address(
-                    &vk::BufferDeviceAddressInfo::default().buffer(*scratch_buffer.buffer_mut()),
+                    &vk::BufferDeviceAddressInfo::default().buffer(scratch_buffer.buffer()),
                 )
             },
         };
@@ -207,7 +207,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
         let instance_buffer_size =
             std::mem::size_of::<vk::AccelerationStructureInstanceKHR>() * instances.len();
 
-        let mut instance_buffer = Buffer::new(
+        let instance_buffer = Buffer::new(
             device,
             device_memory_properties,
             &vk::BufferCreateInfo::default()
@@ -253,7 +253,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
                     device_address: unsafe {
                         device.get_buffer_device_address(
                             &vk::BufferDeviceAddressInfo::default()
-                                .buffer(*instance_buffer.buffer_mut()),
+                                .buffer(instance_buffer.buffer()),
                         )
                     },
                 });
@@ -278,7 +278,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
                 )
             };
 
-            let mut top_as_buffer = Buffer::new::<u8>(
+            let top_as_buffer = Buffer::new::<u8>(
                 device,
                 device_memory_properties,
                 &vk::BufferCreateInfo::default()
@@ -294,7 +294,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
             let as_create_info = vk::AccelerationStructureCreateInfoKHR::default()
                 .ty(build_info.ty)
                 .size(size_info.acceleration_structure_size)
-                .buffer(*top_as_buffer.buffer_mut())
+                .buffer(top_as_buffer.buffer())
                 .offset(0);
 
             let top_as =
@@ -303,7 +303,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
 
             build_info.dst_acceleration_structure = top_as;
 
-            let mut scratch_buffer = Buffer::new::<u8>(
+            let scratch_buffer = Buffer::new::<u8>(
                 device,
                 device_memory_properties,
                 &vk::BufferCreateInfo::default()
@@ -318,8 +318,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
             build_info.scratch_data = vk::DeviceOrHostAddressKHR {
                 device_address: unsafe {
                     device.get_buffer_device_address(
-                        &vk::BufferDeviceAddressInfo::default()
-                            .buffer(*scratch_buffer.buffer_mut()),
+                        &vk::BufferDeviceAddressInfo::default().buffer(scratch_buffer.buffer()),
                     )
                 },
             };
