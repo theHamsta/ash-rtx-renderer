@@ -95,21 +95,22 @@ impl<'device> RayTrace<'device> {
 
 impl std::fmt::Debug for RayTrace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Orthographic")
+        f.debug_struct("RayTrace")
             .field("image_views", &self.image_views)
             .finish()
     }
 }
 
 impl<'device> RayTrace<'device> {
-    fn destroy_images(&mut self) {
+    fn destroy_images(&mut self) -> anyhow::Result<()> {
         unsafe {
             let device = self.device;
-            device.device_wait_idle().unwrap();
+            device.device_wait_idle()?;
             for img in self.image_views.iter() {
                 device.destroy_image_view(*img, None);
             }
         }
+        Ok(())
     }
 
     fn update_push_constants(&mut self) {
@@ -286,7 +287,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
     ) -> anyhow::Result<()> {
         let device = self.device;
         debug!("Set resolution: {size:?} images: {images:?}");
-        self.destroy_images();
+        self.destroy_images()?;
         self.size = size;
         self.update_push_constants();
 
@@ -578,7 +579,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
 
 impl Drop for RayTrace<'_> {
     fn drop(&mut self) {
-        self.destroy_images();
+        let _ = self.destroy_images();
     }
 }
 
