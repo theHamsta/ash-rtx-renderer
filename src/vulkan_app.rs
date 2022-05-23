@@ -46,10 +46,9 @@ impl VulkanApp {
     pub fn new(window: &Window, with_raytracing: bool) -> anyhow::Result<Self> {
         unsafe {
             let surface_extensions = ash_window::enumerate_required_extensions(window)?;
-            let mut instance_extensions = surface_extensions.to_vec();
-            instance_extensions.push(khr::GetPhysicalDeviceProperties2::name().as_ptr());
+            let instance_extensions = surface_extensions.to_vec();
             let app_desc = vk::ApplicationInfo::default()
-                .api_version(vk::make_api_version(0, 1, 0, 0))
+                .api_version(vk::make_api_version(0, 1, 3, 204))
                 .application_name(std::ffi::CStr::from_bytes_with_nul_unchecked(
                     b"ash-rtx-renderer\0",
                 ));
@@ -109,6 +108,7 @@ impl VulkanApp {
                     Some((dev, family))
                 })
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
+            let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
             let mut features12 = vk::PhysicalDeviceVulkan12Features::default()
                 .buffer_device_address(true)
                 .vulkan_memory_model(true);
@@ -125,16 +125,10 @@ impl VulkanApp {
                     ash::extensions::khr::RayTracingPipeline::name().as_ptr(),
                     ash::extensions::khr::AccelerationStructure::name().as_ptr(),
                     ash::extensions::khr::DeferredHostOperations::name().as_ptr(),
-                    vk::KhrSpirv14Fn::name().as_ptr(),
-                    vk::ExtScalarBlockLayoutFn::name().as_ptr(),
-                    vk::KhrGetMemoryRequirements2Fn::name().as_ptr(),
                     khr::Swapchain::name().as_ptr(),
                 ]
             } else {
                 vec![
-                    vk::KhrSpirv14Fn::name().as_ptr(),
-                    vk::ExtScalarBlockLayoutFn::name().as_ptr(),
-                    vk::KhrGetMemoryRequirements2Fn::name().as_ptr(),
                     khr::Swapchain::name().as_ptr(),
                 ]
             };
@@ -146,6 +140,7 @@ impl VulkanApp {
             let device_create_info = if with_raytracing {
                 vk::DeviceCreateInfo::default()
                     .enabled_extension_names(&enabled_extension_names)
+                    .push_next(&mut features11)
                     .push_next(&mut features12)
                     .push_next(&mut as_feature)
                     .push_next(&mut raytracing_pipeline)
@@ -155,6 +150,10 @@ impl VulkanApp {
                     .enabled_extension_names(&enabled_extension_names)
                     .queue_create_infos(&queue_create_info)
             };
+            let mut physical_device_features = vk::PhysicalDeviceFeatures2::default();
+            physical_device_features.push_next(&mut vk::PhysicalDeviceVulkan11Features::default());
+            physical_device_features.push_next(&mut vk::PhysicalDeviceVulkan12Features::default());
+            device_create_info.push_next(&mut physical_device_features);
             let device = instance.create_device(physical_device, &device_create_info, None)?;
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
@@ -359,7 +358,10 @@ impl VulkanApp {
         }
     }
 
-    pub fn rt_pipeline_properties(physical_device: vk::PhysicalDevice, instance: ash::Instance) -> vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'static> {
+    pub fn rt_pipeline_properties(
+        physical_device: vk::PhysicalDevice,
+        instance: ash::Instance,
+    ) -> vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'static> {
         let mut rt_pipeline_properties =
             vk::PhysicalDeviceRayTracingPipelinePropertiesKHR::default();
 
@@ -367,10 +369,8 @@ impl VulkanApp {
             vk::PhysicalDeviceProperties2::default().push_next(&mut rt_pipeline_properties);
 
         unsafe {
-            instance.get_physical_device_properties2(
-                physical_device,
-                &mut physical_device_properties2,
-            );
+            instance
+                .get_physical_device_properties2(physical_device, &mut physical_device_properties2);
         }
         rt_pipeline_properties
     }
