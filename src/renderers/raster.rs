@@ -126,7 +126,7 @@ impl<'device> Raster<'device> {
     }
 }
 
-impl<'device, 'ac> Renderer<'device> for Raster<'device> {
+impl<'device> Renderer<'device> for Raster<'device> {
     fn draw(
         &self,
         _device: &ash::Device,

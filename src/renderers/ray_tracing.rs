@@ -105,10 +105,9 @@ impl<'device> RayTrace<'device> {
     fn destroy_images(&mut self) -> anyhow::Result<()> {
         unsafe {
             let device = self.device;
-            //device.device_wait_idle()?;
-            device.device_wait_idle().unwrap();
-            for img in self.image_views.iter() {
-                device.destroy_image_view(*img, None);
+            device.device_wait_idle()?;
+            for img in self.image_views.drain(..) {
+                device.destroy_image_view(img, None);
             }
         }
         Ok(())
@@ -167,6 +166,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 .image_info(&image_info);
 
             unsafe {
+                trace!("update_descriptor_sets");
                 device.update_descriptor_sets(&[accel_write, image_write], &[]);
             }
 
@@ -208,6 +208,8 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                         &[self.descriptor_set.unwrap()],
                         &[],
                     );
+
+                    trace!("cmd_trace_rays");
                     self.raytracing_tracing_ext.cmd_trace_rays(
                         cmd,
                         &sbt_raygen_region,
@@ -293,7 +295,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         self.update_push_constants();
 
         let mut shader_groups = vec![
-            // group0 = [ raygen ]
+            // raygen
             vk::RayTracingShaderGroupCreateInfoKHR::default()
                 .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
                 .general_shader(0)
@@ -303,7 +305,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         ];
         for _ in 0..self.num_instances() {
             shader_groups.push(
-                // group1 = [ chit ]
+                // closest
                 vk::RayTracingShaderGroupCreateInfoKHR::default()
                     .ty(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP)
                     .general_shader(vk::SHADER_UNUSED_KHR)
@@ -313,7 +315,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             );
         }
         shader_groups.push(
-            // group2 = [ miss ]
+            // miss
             vk::RayTracingShaderGroupCreateInfoKHR::default()
                 .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
                 .general_shader(2)
@@ -366,25 +368,20 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             let handle_size = self.rt_pipeline_properties.shader_group_handle_size;
             let raygen_data = unsafe {
                 self.raytracing_tracing_ext
-                    .get_ray_tracing_shader_group_handles(pipeline, 0, 0, handle_size as usize)
+                    .get_ray_tracing_shader_group_handles(pipeline, 0, 1, handle_size as usize)
             }?;
             let chit_data = unsafe {
                 self.raytracing_tracing_ext
                     .get_ray_tracing_shader_group_handles(
                         pipeline,
-                        1,
+                        0,
                         self.num_instances(),
                         handle_size as usize * self.num_instances() as usize,
                     )
             }?;
             let missdata = unsafe {
                 self.raytracing_tracing_ext
-                    .get_ray_tracing_shader_group_handles(
-                        pipeline,
-                        1,
-                        1 + self.num_instances(),
-                        handle_size as usize,
-                    )
+                    .get_ray_tracing_shader_group_handles(pipeline, 0, 1, handle_size as usize)
             }?;
 
             let table_size = aligned_size(

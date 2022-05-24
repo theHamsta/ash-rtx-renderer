@@ -9,6 +9,7 @@ use ash::{
 };
 use ash_swapchain::Swapchain;
 use log::{error, info};
+use tracing::{span, Level};
 use tracy_client::frame_mark;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -272,6 +273,8 @@ impl VulkanApp {
         if self.tracing_mode == TracingMode::Basic {
             frame_mark();
         }
+        let span = span!(Level::INFO, "draw");
+        let _ = span.enter();
         let device = &self.device;
         unsafe {
             let acq = self
@@ -285,6 +288,9 @@ impl VulkanApp {
                     !0,
                 )
                 .context("Failed to acquire swapchain image")?;
+
+            let span = span!(Level::INFO, "drawing");
+            let _ = span.enter();
             let cmd = self.frames[acq.frame_index].cmd;
             let swapchain_image = self.swapchain.images()[acq.image_index];
             device.begin_command_buffer(

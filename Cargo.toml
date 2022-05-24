@@ -34,6 +34,7 @@ tracing = { version = "0.1.34" }
 tracing-subscriber = { version = "0.3.11" }
 tracing-tracy = { version = "0.9" }
 tracy-client = { version = "0.13.2" }
+tracing-log = { version = "0.1.3" }
 
 #rspirv-reflect = "0.7"
 # Nice additions
