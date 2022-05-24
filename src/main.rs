@@ -8,6 +8,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
+use tracing_subscriber::layer::SubscriberExt;
 
 use clap::Parser;
 use mesh::Mesh;
@@ -19,7 +20,7 @@ use winit::{
 
 use crate::{
     renderers::{color_sine::ColorSine, raster::Raster, Renderer, RendererImpl},
-    vulkan_app::VulkanApp,
+    vulkan_app::{TracingMode, VulkanApp},
 };
 
 mod acceleration_structure;
@@ -29,6 +30,13 @@ mod renderers;
 mod shader;
 mod uniforms;
 mod vulkan_app;
+
+fn setup_tracing() -> anyhow::Result<()> {
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::registry().with(tracing_tracy::TracyLayer::new()),
+    )
+    .map_err(|err| anyhow::anyhow!("Failed to set up tracing: {err}"))
+}
 
 #[derive(clap::Parser)]
 #[clap(author, version, about)]
@@ -42,12 +50,23 @@ struct Args {
 
     #[clap(short, long)]
     no_raytracing: bool,
+
+    #[clap(short, long)]
+    tracing: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     pretty_env_logger::try_init()?;
 
     let args = Args::parse();
+
+    let tracing_mode = if args.tracing {
+        setup_tracing()?;
+        TracingMode::Basic
+    } else {
+        TracingMode::NoTracing
+    };
+
     let mut meshes = Vec::new();
     for mesh in args.mesh_file.iter().map(|mesh| {
         Mesh::from_file(
@@ -77,11 +96,11 @@ fn main() -> anyhow::Result<()> {
         .with_position(winit::dpi::PhysicalPosition::new(1300i32, 800))
         .build(&event_loop)?;
     let mut with_raytracing = !args.no_raytracing;
-    let mut vulkan_app = VulkanApp::new(&window, with_raytracing).or_else(|err| {
+    let mut vulkan_app = VulkanApp::new(&window, with_raytracing, tracing_mode).or_else(|err| {
         if with_raytracing {
             error!("Failed to initialize with raytracing (is it supported by driver and hardware?). Disambling ray tracing...");
             with_raytracing = false;
-            VulkanApp::new(&window, false)
+            VulkanApp::new(&window, false, tracing_mode)
         } else {
             Err(err)
         }

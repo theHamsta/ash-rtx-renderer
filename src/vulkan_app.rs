@@ -9,6 +9,7 @@ use ash::{
 };
 use ash_swapchain::Swapchain;
 use log::{error, info};
+use tracy_client::frame_mark;
 use winit::{dpi::PhysicalSize, window::Window};
 
 #[derive(thiserror::Error, Debug)]
@@ -27,6 +28,12 @@ struct Functions {
     swapchain: ash::extensions::khr::Swapchain,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum TracingMode {
+    NoTracing,
+    Basic,
+}
+
 pub struct VulkanApp {
     instance: ash::Instance,
     surface: vk::SurfaceKHR,
@@ -40,10 +47,15 @@ pub struct VulkanApp {
     command_pool: vk::CommandPool,
     device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     physical_device: vk::PhysicalDevice,
+    tracing_mode: TracingMode,
 }
 
 impl VulkanApp {
-    pub fn new(window: &Window, with_raytracing: bool) -> anyhow::Result<Self> {
+    pub fn new(
+        window: &Window,
+        with_raytracing: bool,
+        tracing_mode: TracingMode,
+    ) -> anyhow::Result<Self> {
         unsafe {
             let surface_extensions = ash_window::enumerate_required_extensions(window)?;
             let instance_extensions = surface_extensions.to_vec();
@@ -120,18 +132,15 @@ impl VulkanApp {
                 vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default()
                     .ray_tracing_pipeline(true);
 
-            let enabled_extension_names = if with_raytracing {
-                vec![
-                    ash::extensions::khr::RayTracingPipeline::name().as_ptr(),
-                    ash::extensions::khr::AccelerationStructure::name().as_ptr(),
-                    ash::extensions::khr::DeferredHostOperations::name().as_ptr(),
-                    khr::Swapchain::name().as_ptr(),
-                ]
-            } else {
-                vec![
-                    khr::Swapchain::name().as_ptr(),
-                ]
-            };
+            let mut enabled_extension_names = vec![khr::Swapchain::name().as_ptr()];
+            if with_raytracing {
+                enabled_extension_names
+                    .push(ash::extensions::khr::RayTracingPipeline::name().as_ptr());
+                enabled_extension_names
+                    .push(ash::extensions::khr::AccelerationStructure::name().as_ptr());
+                enabled_extension_names
+                    .push(ash::extensions::khr::DeferredHostOperations::name().as_ptr());
+            }
 
             let queue_create_info = [vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_family_index)
@@ -238,6 +247,7 @@ impl VulkanApp {
                     swapchain: swapchain_fn,
                 },
                 device_memory_properties,
+                tracing_mode,
             })
         }
     }
@@ -259,6 +269,9 @@ impl VulkanApp {
             usize,
         ) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
+        if self.tracing_mode == TracingMode::Basic {
+            frame_mark();
+        }
         let device = &self.device;
         unsafe {
             let acq = self
