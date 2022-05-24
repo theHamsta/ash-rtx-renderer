@@ -8,6 +8,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
+use tracing_log::LogTracer;
 use tracing_subscriber::layer::SubscriberExt;
 
 use clap::Parser;
@@ -32,6 +33,7 @@ mod uniforms;
 mod vulkan_app;
 
 fn setup_tracing() -> anyhow::Result<()> {
+    LogTracer::init()?;
     tracing::subscriber::set_global_default(
         tracing_subscriber::registry().with(tracing_tracy::TracyLayer::new()),
     )
@@ -56,14 +58,13 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
-    pretty_env_logger::try_init()?;
-
     let args = Args::parse();
 
     let tracing_mode = if args.tracing {
         setup_tracing()?;
         TracingMode::Basic
     } else {
+        pretty_env_logger::try_init()?;
         TracingMode::NoTracing
     };
 
@@ -98,7 +99,7 @@ fn main() -> anyhow::Result<()> {
     let mut with_raytracing = !args.no_raytracing;
     let mut vulkan_app = VulkanApp::new(&window, with_raytracing, tracing_mode).or_else(|err| {
         if with_raytracing {
-            error!("Failed to initialize with raytracing (is it supported by driver and hardware?). Disambling ray tracing...");
+            warn!("Failed to initialize with raytracing (is it supported by driver and hardware?). Disambling ray tracing...");
             with_raytracing = false;
             VulkanApp::new(&window, false, tracing_mode)
         } else {

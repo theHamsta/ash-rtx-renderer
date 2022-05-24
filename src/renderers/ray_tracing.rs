@@ -107,8 +107,8 @@ impl<'device> RayTrace<'device> {
             let device = self.device;
             //device.device_wait_idle()?;
             device.device_wait_idle().unwrap();
-            for img in self.image_views.iter() {
-                device.destroy_image_view(*img, None);
+            for img in self.image_views.drain(..) {
+                device.destroy_image_view(img, None);
             }
         }
         Ok(())
@@ -167,6 +167,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 .image_info(&image_info);
 
             unsafe {
+                trace!("update_descriptor_sets");
                 device.update_descriptor_sets(&[accel_write, image_write], &[]);
             }
 
@@ -208,6 +209,8 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                         &[self.descriptor_set.unwrap()],
                         &[],
                     );
+
+                    trace!("cmd_trace_rays");
                     self.raytracing_tracing_ext.cmd_trace_rays(
                         cmd,
                         &sbt_raygen_region,
@@ -366,25 +369,20 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             let handle_size = self.rt_pipeline_properties.shader_group_handle_size;
             let raygen_data = unsafe {
                 self.raytracing_tracing_ext
-                    .get_ray_tracing_shader_group_handles(pipeline, 0, 0, handle_size as usize)
+                    .get_ray_tracing_shader_group_handles(pipeline, 0, 1, handle_size as usize)
             }?;
             let chit_data = unsafe {
                 self.raytracing_tracing_ext
                     .get_ray_tracing_shader_group_handles(
                         pipeline,
-                        1,
+                        0,
                         self.num_instances(),
                         handle_size as usize * self.num_instances() as usize,
                     )
             }?;
             let missdata = unsafe {
                 self.raytracing_tracing_ext
-                    .get_ray_tracing_shader_group_handles(
-                        pipeline,
-                        1,
-                        1 + self.num_instances(),
-                        handle_size as usize,
-                    )
+                    .get_ray_tracing_shader_group_handles(pipeline, 0, 1, handle_size as usize)
             }?;
 
             let table_size = aligned_size(
