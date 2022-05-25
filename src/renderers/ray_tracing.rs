@@ -103,6 +103,12 @@ impl std::fmt::Debug for RayTrace<'_> {
 
 impl<'device> RayTrace<'device> {
     fn destroy_images(&mut self) -> anyhow::Result<()> {
+        if let Some(p) = self.pipeline_layout.take() {
+            unsafe { self.device.destroy_pipeline_layout(p, None) }
+        }
+        if let Some(p) = self.pipeline.take() {
+            unsafe { self.device.destroy_pipeline(p, None) };
+        }
         unsafe {
             let device = self.device;
             device.device_wait_idle()?;

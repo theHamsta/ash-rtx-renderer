@@ -114,6 +114,16 @@ impl<'device> Raster<'device> {
                 device.destroy_framebuffer(*img, None);
             }
         }
+
+        if let Some(p) = self.pipeline.take() {
+            unsafe { self.device.destroy_pipeline(p, None) };
+        }
+        if let Some(p) = self.pipeline_layout.take() {
+            unsafe { self.device.destroy_pipeline_layout(p, None) };
+        }
+        if let Some(p) = self.renderpass.take() {
+            unsafe { self.device.destroy_render_pass(p, None) };
+        }
     }
     fn update_push_constants(&mut self) {
         self.uniforms = Some(PushConstants::new(
