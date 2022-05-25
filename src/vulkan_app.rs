@@ -76,7 +76,7 @@ impl VulkanApp {
 
             let (physical_device, queue_family_index) = instance
                 .enumerate_physical_devices()
-                .unwrap()
+                .context("Failed to enumerate physical devices")?
                 .into_iter()
                 .find_map(|dev| {
                     let mut props = vk::PhysicalDeviceProperties2KHR::default();
