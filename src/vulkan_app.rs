@@ -1,5 +1,6 @@
-use std::os::raw::c_char;
+use std::collections::HashSet;
 use std::time::Instant;
+use std::{ffi::CStr, os::raw::c_char};
 
 use anyhow::Context;
 use ash::{
@@ -8,7 +9,7 @@ use ash::{
     vk::{self, SurfaceFormatKHR},
 };
 use ash_swapchain::Swapchain;
-use log::{error, info};
+use log::{debug, error, info};
 use tracing::{span, Level};
 use tracy_client::frame_mark;
 use winit::{dpi::PhysicalSize, window::Window};
@@ -49,6 +50,8 @@ pub struct VulkanApp {
     device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     physical_device: vk::PhysicalDevice,
     tracing_mode: TracingMode,
+    cuda_support: bool,
+    raytracing_support: bool,
 }
 
 impl VulkanApp {
@@ -121,6 +124,14 @@ impl VulkanApp {
                     Some((dev, family))
                 })
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
+
+            let mut extensions = HashSet::new();
+            for ext in instance.enumerate_device_extension_properties(physical_device)? {
+                extensions.insert(CStr::from_ptr(std::mem::transmute(
+                    ext.extension_name.as_ptr(),
+                )));
+                debug!("Device supports: {ext:?}");
+            }
             let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
             let mut features12 = vk::PhysicalDeviceVulkan12Features::default()
                 .buffer_device_address(true)
@@ -134,20 +145,33 @@ impl VulkanApp {
                     .ray_tracing_pipeline(true);
 
             let mut enabled_extension_names = vec![khr::Swapchain::name().as_ptr()];
-            if with_raytracing {
-                enabled_extension_names
-                    .push(ash::extensions::khr::RayTracingPipeline::name().as_ptr());
-                enabled_extension_names
-                    .push(ash::extensions::khr::AccelerationStructure::name().as_ptr());
-                enabled_extension_names
-                    .push(ash::extensions::khr::DeferredHostOperations::name().as_ptr());
-            }
+
+            let raytracing_support = with_raytracing
+                && add_if_supported(
+                    &extensions,
+                    &[
+                        ash::extensions::khr::RayTracingPipeline::name(),
+                        ash::extensions::khr::AccelerationStructure::name(),
+                        ash::extensions::khr::DeferredHostOperations::name(),
+                    ],
+                    &mut enabled_extension_names,
+                );
+            info!("Raytracing support: {raytracing_support}");
+            let cuda_support = add_if_supported(
+                &extensions,
+                &[
+                    vk::NvxBinaryImportFn::name(),
+                    vk::NvxImageViewHandleFn::name(),
+                ],
+                &mut enabled_extension_names,
+            );
+            info!("CUDA support: {cuda_support}");
 
             let queue_create_info = [vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_family_index)
                 .queue_priorities(&[1.0])];
 
-            let device_create_info = if with_raytracing {
+            let device_create_info = if raytracing_support {
                 vk::DeviceCreateInfo::default()
                     .enabled_extension_names(&enabled_extension_names)
                     .push_next(&mut features11)
@@ -222,7 +246,7 @@ impl VulkanApp {
             let mut rt_pipeline_properties =
                 vk::PhysicalDeviceRayTracingPipelinePropertiesKHR::default();
 
-            if with_raytracing {
+            if raytracing_support {
                 let mut physical_device_properties2 =
                     vk::PhysicalDeviceProperties2::default().push_next(&mut rt_pipeline_properties);
 
@@ -249,6 +273,8 @@ impl VulkanApp {
                 },
                 device_memory_properties,
                 tracing_mode,
+                cuda_support,
+                raytracing_support
             })
         }
     }
@@ -397,6 +423,14 @@ impl VulkanApp {
     pub fn physical_device(&self) -> vk::PhysicalDevice {
         self.physical_device
     }
+
+    pub fn cuda_support(&self) -> bool {
+        self.cuda_support
+    }
+
+    pub fn raytracing_support(&self) -> bool {
+        self.raytracing_support
+    }
 }
 
 impl Drop for VulkanApp {
@@ -416,5 +450,20 @@ impl Drop for VulkanApp {
             self.device.destroy_device(None);
             self.instance.destroy_instance(None);
         }
+    }
+}
+
+fn add_if_supported(
+    supported: &HashSet<&'static CStr>,
+    ext: &[&'static CStr],
+    vec: &mut Vec<*const c_char>,
+) -> bool {
+    if ext.iter().all(|ext| supported.contains(ext)) {
+        for ext in ext.iter() {
+            vec.push(ext.as_ptr());
+        }
+        true
+    } else {
+        false
     }
 }

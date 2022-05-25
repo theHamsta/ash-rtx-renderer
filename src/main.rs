@@ -20,7 +20,7 @@ use winit::{
 };
 
 use crate::{
-    renderers::{color_sine::ColorSine, raster::Raster, Renderer, RendererImpl},
+    renderers::{color_sine::ColorSine, cuda::Cuda, raster::Raster, Renderer, RendererImpl},
     vulkan_app::{TracingMode, VulkanApp},
 };
 
@@ -96,16 +96,8 @@ fn main() -> anyhow::Result<()> {
     let window = WindowBuilder::new()
         .with_position(winit::dpi::PhysicalPosition::new(1300i32, 800))
         .build(&event_loop)?;
-    let mut with_raytracing = !args.no_raytracing;
-    let mut vulkan_app = VulkanApp::new(&window, with_raytracing, tracing_mode).or_else(|err| {
-        if with_raytracing {
-            warn!("Failed to initialize with raytracing (is it supported by driver and hardware?). Disambling ray tracing...");
-            with_raytracing = false;
-            VulkanApp::new(&window, false, tracing_mode)
-        } else {
-            Err(err)
-        }
-    })?;
+    let with_raytracing = !args.no_raytracing;
+    let mut vulkan_app = VulkanApp::new(&window, with_raytracing, tracing_mode)?;
 
     // Device must be 'static as it must outlive structs moved into eventloop referencing it
     let device = Box::leak(Box::new(vulkan_app.device().clone()));
@@ -113,7 +105,7 @@ fn main() -> anyhow::Result<()> {
     let raster = RendererImpl::Raster(Raster::new(device)?);
     let mut renderers = vec![raster];
 
-    if with_raytracing {
+    if vulkan_app.raytracing_support() {
         let raytrace = RendererImpl::RayTrace(RayTrace::new(
             device,
             vulkan_app.instance(),
@@ -128,6 +120,13 @@ fn main() -> anyhow::Result<()> {
     renderers.push(color_sine);
     debug!("Renderers: {renderers:?}");
 
+    if vulkan_app.cuda_support() {
+        match Cuda::new(vulkan_app.instance(), vulkan_app.device().handle()) {
+            Ok(cuda) => renderers.push(RendererImpl::Cuda(cuda)),
+            Err(err) => error!("Failed to create CUDA renderer {err}"),
+        }
+    }
+
     let meshes = meshes
         .iter()
         .map(|mesh| {
@@ -135,7 +134,7 @@ fn main() -> anyhow::Result<()> {
                 device,
                 vulkan_app.device_memory_properties(),
                 mesh,
-                with_raytracing,
+                vulkan_app.raytracing_support(),
             )?))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
