@@ -1,5 +1,6 @@
 use std::{ffi::CStr, mem::MaybeUninit, ptr::null, time::Instant};
 
+use anyhow::Context;
 use ash::vk;
 
 use super::Renderer;
@@ -22,6 +23,15 @@ impl std::fmt::Debug for Cuda {
     }
 }
 
+impl Drop for Cuda {
+    fn drop(&mut self) {
+        unsafe {
+            (self.nvx_ext.destroy_cu_function_nvx)(self.device, self.function, null());
+            (self.nvx_ext.destroy_cu_module_nvx)(self.device, self.module, null());
+        }
+    }
+}
+
 impl Cuda {
     pub fn new(instance: &ash::Instance, device: vk::Device) -> anyhow::Result<Self> {
         let nvx_ext = vk::NvxBinaryImportFn::load(|name| unsafe {
@@ -32,44 +42,39 @@ impl Cuda {
             std::mem::transmute(instance.get_device_proc_addr(device, name.as_ptr()))
         });
 
-        let mut module = MaybeUninit::zeroed();
-        let mut function = MaybeUninit::zeroed();
-        unsafe {
-            let rtn = (nvx_ext.create_cu_module_nvx)(
+        let module = unsafe {
+            let mut module = MaybeUninit::zeroed();
+            (nvx_ext.create_cu_module_nvx)(
                 device,
                 &vk::CuModuleCreateInfoNVX::default()
-                    .data(include_bytes!("../../shaders/simple_cuda.cu.ptx")),
+                    .data(include_bytes!("../../shaders/simple_cuda.cu.cubin")),
                 null(),
                 module.as_mut_ptr(),
-            );
-            if vk::Result::SUCCESS != rtn {
-                return Err(anyhow::anyhow!("Failed to load CUDA module: {rtn}"));
-            };
-            let rtn = (nvx_ext.create_cu_function_nvx)(
+            )
+            .result_with_success(module.assume_init())
+            .context("Failed to load CUDA module")?
+        };
+        let function = unsafe {
+            let mut function = MaybeUninit::zeroed();
+            (nvx_ext.create_cu_function_nvx)(
                 device,
                 &vk::CuFunctionCreateInfoNVX::default()
                     .name(CStr::from_bytes_with_nul_unchecked(b"simple\0"))
-                    .module(module.assume_init()),
+                    .module(module),
                 null(),
                 function.as_mut_ptr(),
-            );
+            )
+            .result_with_success(function.assume_init())
+            .context("Failed to load CUDA function")?
+        };
 
-            if vk::Result::SUCCESS != rtn {
-                return Err(anyhow::anyhow!(
-                    "Failed to load CUDA function from module: {rtn}"
-                ));
-            };
-        }
-
-        unsafe {
-            Ok(Self {
-                module: module.assume_init(),
-                function: function.assume_init(),
-                nvx_ext,
-                nvx_image_view_ext,
-                device,
-            })
-        }
+        Ok(Self {
+            module,
+            function,
+            nvx_ext,
+            nvx_image_view_ext,
+            device,
+        })
     }
 }
 
@@ -79,7 +84,7 @@ impl<'device> Renderer<'device> for Cuda {
         device: &ash::Device,
         cmd: vk::CommandBuffer,
         image: vk::Image,
-        start_instant: Instant,
+        _start_instant: Instant,
         _swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         unsafe {
@@ -106,7 +111,13 @@ impl<'device> Renderer<'device> for Cuda {
                     })],
             );
 
-            let t = (start_instant.elapsed().as_secs_f32().sin() + 1.0) * 0.5;
+            let surface = {
+                let mut surface = MaybeUninit::zeroed();
+                let image_view = todo!();
+                (self.nvx_image_view_ext.get_image_view_address_nvx)(device.handle(), image_view, surface.as_mut_ptr()).result_with_success(surface.assume_init())?
+            };
+
+            //let t = (start_instant.elapsed().as_secs_f32().sin() + 1.0) * 0.5;
 
             // Typically this barrier would be implemented with the implicit subpass dependency to
             // EXTERNAL
