@@ -1,9 +1,13 @@
-use std::{ffi::CStr, mem::MaybeUninit, ptr::null, time::Instant};
-
 use anyhow::Context;
 use ash::vk;
+use std::{
+    ffi::{c_void, CStr},
+    mem::MaybeUninit,
+    ptr::null,
+    time::Instant,
+};
 
-use super::Renderer;
+use super::{RenderStyle, Renderer};
 
 pub struct Cuda {
     module: vk::CuModuleNVX,
@@ -11,6 +15,8 @@ pub struct Cuda {
     nvx_ext: vk::NvxBinaryImportFn,
     nvx_image_view_ext: vk::NvxImageViewHandleFn,
     device: vk::Device,
+    surface_format: vk::SurfaceFormatKHR,
+    size: vk::Extent2D,
 }
 
 impl std::fmt::Debug for Cuda {
@@ -30,6 +36,10 @@ impl Drop for Cuda {
             (self.nvx_ext.destroy_cu_module_nvx)(self.device, self.module, null());
         }
     }
+}
+
+fn div_up(x: u32, y: u32) -> u32 {
+    (x + y - 1) / y
 }
 
 impl Cuda {
@@ -74,6 +84,11 @@ impl Cuda {
             nvx_ext,
             nvx_image_view_ext,
             device,
+            surface_format: vk::SurfaceFormatKHR::default().format(vk::Format::R8G8B8A8_SNORM),
+            size: vk::Extent2D {
+                width: 0,
+                height: 0,
+            },
         })
     }
 }
@@ -84,7 +99,7 @@ impl<'device> Renderer<'device> for Cuda {
         device: &ash::Device,
         cmd: vk::CommandBuffer,
         image: vk::Image,
-        _start_instant: Instant,
+        start_instant: Instant,
         _swapchain_idx: usize,
     ) -> anyhow::Result<()> {
         unsafe {
@@ -113,11 +128,58 @@ impl<'device> Renderer<'device> for Cuda {
 
             let surface = {
                 let mut surface = MaybeUninit::zeroed();
-                let image_view = todo!();
-                (self.nvx_image_view_ext.get_image_view_address_nvx)(device.handle(), image_view, surface.as_mut_ptr()).result_with_success(surface.assume_init())?
-            };
 
-            //let t = (start_instant.elapsed().as_secs_f32().sin() + 1.0) * 0.5;
+                let create_view_info = vk::ImageViewCreateInfo::default()
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(self.surface_format.format)
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::R,
+                        g: vk::ComponentSwizzle::G,
+                        b: vk::ComponentSwizzle::B,
+                        a: vk::ComponentSwizzle::A,
+                    })
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .image(image);
+
+                let image_view = device.create_image_view(&create_view_info, None)?;
+                (self.nvx_image_view_ext.get_image_view_address_nvx)(
+                    device.handle(),
+                    image_view,
+                    surface.as_mut_ptr(),
+                )
+                .result_with_success(surface.assume_init())
+            }?;
+
+            let t = (start_instant.elapsed().as_secs_f32().sin() + 1.0) * 0.5;
+            let vk::Extent2D { width, height } = self.size;
+
+            let block_x = 16;
+            let block_y = 16;
+
+            (self.nvx_ext.cmd_cu_launch_kernel_nvx)(
+                cmd,
+                &vk::CuLaunchInfoNVX::default()
+                    .function(self.function)
+                    .grid_dim_x(div_up(width, block_x))
+                    .grid_dim_y(div_up(height, block_y))
+                    .grid_dim_z(1)
+                    .block_dim_x(block_x)
+                    .block_dim_y(block_y)
+                    .block_dim_z(1)
+                    .shared_mem_bytes(0)
+                    .params(&[
+                        (&width) as *const u32 as *const c_void,
+                        (&height) as *const u32 as *const c_void,
+                        (&t) as *const f32 as *const c_void,
+                        (&surface.device_address) as *const u64 as *const c_void,
+                    ]),
+            );
 
             // Typically this barrier would be implemented with the implicit subpass dependency to
             // EXTERNAL
@@ -144,6 +206,19 @@ impl<'device> Renderer<'device> for Cuda {
                     })],
             );
         }
+        Ok(())
+    }
+
+    fn set_resolution(
+        &mut self,
+        surface_format: ash::vk::SurfaceFormatKHR,
+        size: vk::Extent2D,
+        _images: &[vk::Image],
+        _device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        _render_style: RenderStyle,
+    ) -> anyhow::Result<()> {
+        self.surface_format = surface_format;
+        self.size = size;
         Ok(())
     }
 }

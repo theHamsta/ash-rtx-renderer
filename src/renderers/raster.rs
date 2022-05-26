@@ -320,7 +320,7 @@ impl<'device> Renderer<'device> for Raster<'device> {
         self.renderpass = Some(renderpass);
         self.pipeline = Some(pipeline);
         self.pipeline_layout = Some(pipeline_layout);
-        self.image_views = images
+        let image_views: anyhow::Result<Vec<_>> = images
             .iter()
             .map(|&image| {
                 let create_view_info = vk::ImageViewCreateInfo::default()
@@ -340,9 +340,14 @@ impl<'device> Renderer<'device> for Raster<'device> {
                         layer_count: 1,
                     })
                     .image(image);
-                unsafe { device.create_image_view(&create_view_info, None).unwrap() }
+                unsafe {
+                    device
+                        .create_image_view(&create_view_info, None)
+                        .map_err(|err| anyhow::anyhow!("Failed to create image view: {err}"))
+                }
             })
             .collect();
+        self.image_views = image_views?;
 
         let depth_image_create_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)

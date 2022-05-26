@@ -17,13 +17,13 @@ pub fn main() -> anyhow::Result<()> {
                         "-lineinfo",
                         "-o",
                         &format!("{}.cubin", entry.to_string_lossy()),
-                        &entry.to_string_lossy().to_string(),
+                        entry.to_str().unwrap(),
                     ])
                     .output()?,
                 Some("spirv") | Some("ptx") | Some("cubin") => continue,
                 _ => Command::new("glslc")
                     .args([
-                        &entry.to_string_lossy().to_string(),
+                        entry.to_str().unwrap(),
                         "--target-env=vulkan1.3",
                         "-g",
                         "-o",
