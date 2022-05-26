@@ -126,28 +126,27 @@ impl<'device> Renderer<'device> for Cuda {
                     })],
             );
 
+            let create_view_info = vk::ImageViewCreateInfo::default()
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(self.surface_format.format)
+                .components(vk::ComponentMapping {
+                    r: vk::ComponentSwizzle::R,
+                    g: vk::ComponentSwizzle::G,
+                    b: vk::ComponentSwizzle::B,
+                    a: vk::ComponentSwizzle::A,
+                })
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .image(image);
+            let image_view = device.create_image_view(&create_view_info, None)?;
             let surface = {
                 let mut surface = MaybeUninit::zeroed();
 
-                let create_view_info = vk::ImageViewCreateInfo::default()
-                    .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(self.surface_format.format)
-                    .components(vk::ComponentMapping {
-                        r: vk::ComponentSwizzle::R,
-                        g: vk::ComponentSwizzle::G,
-                        b: vk::ComponentSwizzle::B,
-                        a: vk::ComponentSwizzle::A,
-                    })
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    })
-                    .image(image);
-
-                let image_view = device.create_image_view(&create_view_info, None)?;
                 (self.nvx_image_view_ext.get_image_view_address_nvx)(
                     device.handle(),
                     image_view,
@@ -205,6 +204,7 @@ impl<'device> Renderer<'device> for Cuda {
                         layer_count: 1,
                     })],
             );
+            device.destroy_image_view(image_view, None);
         }
         Ok(())
     }
