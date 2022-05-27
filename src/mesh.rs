@@ -1,7 +1,7 @@
 use log::info;
 use ply_rs::ply;
 use std::mem::transmute;
-use std::{os::unix::prelude::OsStrExt, path::Path};
+use std::path::Path;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Position {
@@ -279,11 +279,12 @@ impl Mesh {
             .as_ref()
             .extension()
             .ok_or(MeshIOError::NoFileExtension)?;
-        match ext.as_bytes() {
-            b"ply" | b"PLY" => Mesh::from_ply(path, options),
-            b"obj" | b"OBJ" => Mesh::from_obj(path, options),
+
+        match ext.to_str() {
+            Some("ply") | Some("PLY") => Mesh::from_ply(path, options),
+            Some("obj") | Some("OBJ") => Mesh::from_obj(path, options),
             ext => Err(MeshIOError::UnsupportedMeshFileType(
-                String::from_utf8_lossy(ext).to_string(),
+                ext.unwrap_or("<could not decode OsString>").to_string(),
             )
             .into()),
         }
