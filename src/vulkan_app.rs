@@ -128,10 +128,9 @@ impl VulkanApp {
 
             let mut extensions = HashSet::new();
             for ext in instance.enumerate_device_extension_properties(physical_device)? {
-                extensions.insert(CStr::from_ptr(std::mem::transmute(
-                    ext.extension_name.as_ptr(),
-                ))
-                .to_owned());
+                extensions.insert(
+                    CStr::from_ptr(std::mem::transmute(ext.extension_name.as_ptr())).to_owned(),
+                );
                 debug!("Device supports: {ext:?}");
             }
             let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
@@ -194,7 +193,9 @@ impl VulkanApp {
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let mut swapchain_options = ash_swapchain::Options::default();
-            swapchain_options.frames_in_flight(3);
+            swapchain_options
+                .frames_in_flight(3)
+                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::STORAGE);
             let size = window.inner_size();
             let swapchain = Swapchain::new(
                 &ash_swapchain::Functions {

@@ -33,6 +33,6 @@ void main()
   float tmin = 0.001;
   float tmax = 10000.0;
 
-  //traceRayEXT(topLevelAS, rayFlags, cullMask, 0 /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, 0 /*missIndex*/, origin.xyz, tmin, direction.xyz, tmax, 0 /*payload*/);
-  imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(1.0, 1.0, 0.0, 0.0));
+  traceRayEXT(topLevelAS, rayFlags, cullMask, 0 /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, 0 /*missIndex*/, origin.xyz, tmin, direction.xyz, tmax, 0 /*payload*/);
+  imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue, 1.0));
 }
