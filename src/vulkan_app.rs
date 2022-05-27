@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::ffi::CString;
 use std::time::Instant;
 use std::{ffi::CStr, os::raw::c_char};
 
@@ -129,7 +130,8 @@ impl VulkanApp {
             for ext in instance.enumerate_device_extension_properties(physical_device)? {
                 extensions.insert(CStr::from_ptr(std::mem::transmute(
                     ext.extension_name.as_ptr(),
-                )));
+                ))
+                .to_owned());
                 debug!("Device supports: {ext:?}");
             }
             let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
@@ -274,7 +276,7 @@ impl VulkanApp {
                 device_memory_properties,
                 tracing_mode,
                 cuda_support,
-                raytracing_support
+                raytracing_support,
             })
         }
     }
@@ -454,11 +456,11 @@ impl Drop for VulkanApp {
 }
 
 fn add_if_supported(
-    supported: &HashSet<&'static CStr>,
+    supported: &HashSet<CString>,
     ext: &[&'static CStr],
     vec: &mut Vec<*const c_char>,
 ) -> bool {
-    if ext.iter().all(|ext| supported.contains(ext)) {
+    if ext.iter().all(|ext| supported.contains(ext.to_owned())) {
         for ext in ext.iter() {
             vec.push(ext.as_ptr());
         }
