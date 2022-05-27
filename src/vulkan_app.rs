@@ -78,7 +78,7 @@ impl VulkanApp {
             let surface = ash_window::create_surface(&entry, &instance, window, None)?;
             let surface_fn = khr::Surface::new(&entry, &instance);
 
-            let supported_devices: Vec<_> = instance
+            let mut supported_devices: Vec<_> = instance
                 .enumerate_physical_devices()
                 .context("Failed to enumerate physical devices")?
                 .into_iter()
@@ -139,7 +139,7 @@ impl VulkanApp {
                         }
                     });
             let (physical_device, queue_family_index, props) = first_nvidia_device
-                .or_else(|| supported_devices.get(0).copied())
+                .or_else(|| supported_devices.pop())
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
             info!(
                 "Selected {:?}",
