@@ -86,12 +86,6 @@ impl VulkanApp {
                     let mut props = vk::PhysicalDeviceProperties2KHR::default();
                     instance.get_physical_device_properties2(dev, &mut props);
 
-                    info!(
-                        "{:?}",
-                        ::std::ffi::CStr::from_ptr(
-                            props.properties.device_name.as_ptr() as *const c_char
-                        )
-                    );
                     let (family, _) = instance
                         .get_physical_device_queue_family_properties(dev)
                         .into_iter()
@@ -103,7 +97,15 @@ impl VulkanApp {
                     let supported =
                         surface_fn.get_physical_device_surface_support(dev, family, surface);
                     match supported {
-                        Ok(false) => return None,
+                        Ok(false) => {
+                            info!(
+                                "Not eligible for current surface {:?}",
+                                ::std::ffi::CStr::from_ptr(
+                                    props.properties.device_name.as_ptr() as *const c_char
+                                )
+                            );
+                            return None;
+                        }
                         Ok(true) => (),
                         Err(err) => {
                             error!(
@@ -117,7 +119,7 @@ impl VulkanApp {
                     }
 
                     info!(
-                        "Selected {:?}",
+                        "Supported {:?}",
                         ::std::ffi::CStr::from_ptr(
                             props.properties.device_name.as_ptr() as *const c_char
                         )
@@ -136,9 +138,13 @@ impl VulkanApp {
                             None
                         }
                     });
-            let (physical_device, queue_family_index, _) = first_nvidia_device
+            let (physical_device, queue_family_index, props) = first_nvidia_device
                 .or(supported_devices.iter().next().copied())
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
+            info!(
+                "Selected {:?}",
+                ::std::ffi::CStr::from_ptr(props.properties.device_name.as_ptr() as *const c_char)
+            );
 
             let mut extensions = HashSet::new();
             for ext in instance.enumerate_device_extension_properties(physical_device)? {
