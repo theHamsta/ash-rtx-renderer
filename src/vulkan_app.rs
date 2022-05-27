@@ -139,7 +139,7 @@ impl VulkanApp {
                         }
                     });
             let (physical_device, queue_family_index, props) = first_nvidia_device
-                .or(supported_devices.iter().next().copied())
+                .or_else(|| supported_devices.get(0).copied())
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
             info!(
                 "Selected {:?}",
