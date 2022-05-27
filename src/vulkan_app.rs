@@ -78,11 +78,11 @@ impl VulkanApp {
             let surface = ash_window::create_surface(&entry, &instance, window, None)?;
             let surface_fn = khr::Surface::new(&entry, &instance);
 
-            let (physical_device, queue_family_index) = instance
+            let supported_devices: Vec<_> = instance
                 .enumerate_physical_devices()
                 .context("Failed to enumerate physical devices")?
                 .into_iter()
-                .find_map(|dev| {
+                .filter_map(|dev| {
                     let mut props = vk::PhysicalDeviceProperties2KHR::default();
                     instance.get_physical_device_properties2(dev, &mut props);
 
@@ -122,8 +122,22 @@ impl VulkanApp {
                             props.properties.device_name.as_ptr() as *const c_char
                         )
                     );
-                    Some((dev, family))
+                    Some((dev, family, props))
                 })
+                .collect();
+            let first_nvidia_device =
+                supported_devices
+                    .iter()
+                    .copied()
+                    .find_map(|(physical_device, index, props)| {
+                        if props.properties.vendor_id == 0x10DE {
+                            Some((physical_device, index, props))
+                        } else {
+                            None
+                        }
+                    });
+            let (physical_device, queue_family_index, _) = first_nvidia_device
+                .or(supported_devices.iter().next().copied())
                 .ok_or(VulkanError::NoDeviceForSurfaceFound)?;
 
             let mut extensions = HashSet::new();
