@@ -12,7 +12,7 @@ fillModeNonSolid specifies whether point and wireframe fill modes are supported.
 
 # Requirements
 
-- You needs to have a nightly Rust toolchain installed: 
+- You need to have a nightly Rust toolchain installed: 
 ```
 curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly
 ```
