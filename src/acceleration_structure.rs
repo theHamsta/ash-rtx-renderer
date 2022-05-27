@@ -68,7 +68,7 @@ impl<'device> AccelerationStructureData<'device> {
             .flags(vk::GeometryFlagsKHR::OPAQUE);
         let build_range_info = vk::AccelerationStructureBuildRangeInfoKHR::default()
             .first_vertex(0)
-            .primitive_count(mesh.num_triangles() as u32 / 3)
+            .primitive_count(mesh.num_triangles() as u32)
             .primitive_offset(0)
             .transform_offset(0);
 
