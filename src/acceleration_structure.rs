@@ -10,8 +10,8 @@ use crate::{
 };
 
 // TODO: destroy
-pub struct AccelerationStructureData<'device> {
-    _structure: vk::AccelerationStructureKHR,
+pub struct BottomLevelAccelerationStructure<'device> {
+    structure: vk::AccelerationStructureKHR,
     _buffer: Buffer<'device>,
     handle: vk::DeviceAddress,
     mesh: Option<Rc<DeviceMesh<'device>>>,
@@ -21,10 +21,24 @@ pub struct TopLevelAccelerationStructure<'device> {
     structure: vk::AccelerationStructureKHR,
     _buffer: Buffer<'device>,
     _handle: vk::DeviceAddress,
-    bottomlevel_as: Vec<(AccelerationStructureData<'device>, [f32; 12])>,
+    bottomlevel_as: Vec<(BottomLevelAccelerationStructure<'device>, [f32; 12])>,
+    as_extension: ash::extensions::khr::AccelerationStructure,
 }
 
-impl<'device> AccelerationStructureData<'device> {
+impl Drop for TopLevelAccelerationStructure<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            for bl_as in self.bottomlevel_as.drain(..) {
+                self.as_extension
+                    .destroy_acceleration_structure(bl_as.0.structure, None);
+            }
+            self.as_extension
+                .destroy_acceleration_structure(self.structure, None);
+        }
+    }
+}
+
+impl<'device> BottomLevelAccelerationStructure<'device> {
     pub fn build_bottomlevel(
         cmd: vk::CommandBuffer,
         device: &'device ash::Device,
@@ -161,9 +175,9 @@ impl<'device> AccelerationStructureData<'device> {
             )
         };
         debug!("Built bottom level acceleration structure");
-        Ok(AccelerationStructureData {
+        Ok(BottomLevelAccelerationStructure {
             _buffer: bottom_as_buffer,
-            _structure: bottom_as,
+            structure: bottom_as,
             handle,
             mesh: Some(Rc::clone(&mesh)),
         })
@@ -184,9 +198,9 @@ impl<'device> TopLevelAccelerationStructure<'device> {
     pub fn build_toplevel(
         cmd: vk::CommandBuffer,
         device: &'device ash::Device,
-        bottomlevel_as: Vec<(AccelerationStructureData<'device>, [f32; 12])>,
+        bottomlevel_as: Vec<(BottomLevelAccelerationStructure<'device>, [f32; 12])>,
         device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
-        as_extension: &ash::extensions::khr::AccelerationStructure,
+        as_extension: ash::extensions::khr::AccelerationStructure,
         graphics_queue: vk::Queue,
         attributes_per_instance: u32,
     ) -> anyhow::Result<Self> {
@@ -354,6 +368,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
                 )
             },
             bottomlevel_as,
+            as_extension,
         })
     }
 
@@ -361,7 +376,7 @@ impl<'device> TopLevelAccelerationStructure<'device> {
         self.structure
     }
 
-    pub fn bottomlevel_as(&self) -> &[(AccelerationStructureData, [f32; 12])] {
+    pub fn bottomlevel_as(&self) -> &[(BottomLevelAccelerationStructure, [f32; 12])] {
         self.bottomlevel_as.as_ref()
     }
 

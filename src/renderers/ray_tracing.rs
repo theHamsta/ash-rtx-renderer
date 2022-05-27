@@ -1,5 +1,5 @@
 use crate::{
-    acceleration_structure::{AccelerationStructureData, TopLevelAccelerationStructure},
+    acceleration_structure::{BottomLevelAccelerationStructure, TopLevelAccelerationStructure},
     device_mesh::Buffer,
 };
 use std::{
@@ -36,6 +36,7 @@ pub struct RayTrace<'device> {
     acceleration_structure_ext: ash::extensions::khr::AccelerationStructure,
     rt_pipeline_properties: vk::PhysicalDeviceRayTracingPipelinePropertiesKHR<'device>,
     descriptor_set: Option<vk::DescriptorSet>,
+    descriptor_pool: Option<vk::DescriptorPool>,
     sbt: Option<Buffer<'device>>,
 }
 
@@ -82,6 +83,7 @@ impl<'device> RayTrace<'device> {
             rt_pipeline_properties,
             sbt: None,
             descriptor_set: None,
+            descriptor_pool: None,
         })
     }
 
@@ -261,7 +263,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             .iter()
             .flat_map(|m| {
                 Some((
-                    AccelerationStructureData::build_bottomlevel(
+                    BottomLevelAccelerationStructure::build_bottomlevel(
                         cmd,
                         self.device,
                         Rc::clone(m),
@@ -279,7 +281,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             self.device,
             bottomlevel_as,
             device_memory_properties,
-            &self.acceleration_structure_ext,
+            self.acceleration_structure_ext.clone(),
             graphics_queue,
             NUM_ATTRIBUTES as u32,
         )?);
@@ -519,8 +521,14 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             )
         }?;
 
+        unsafe {
+            self.device
+                .destroy_descriptor_set_layout(descriptor_set_layout, None)
+        };
+
         let descriptor_set = descriptor_sets[0];
         self.descriptor_set = Some(descriptor_set);
+        self.descriptor_pool = Some(descriptor_pool);
 
         self.resolution = size.into();
         Ok(())
@@ -584,6 +592,13 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
 impl Drop for RayTrace<'_> {
     fn drop(&mut self) {
         let _ = self.destroy_images();
+        unsafe {
+            if let Some(pool) = self.descriptor_pool {
+                self.descriptor_set
+                    .map(|l| self.device.free_descriptor_sets(pool, &[l]));
+                self.device.destroy_descriptor_pool(pool, None);
+            }
+        }
     }
 }
 
