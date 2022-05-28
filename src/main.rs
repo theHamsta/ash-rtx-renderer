@@ -45,16 +45,19 @@ fn setup_tracing() -> anyhow::Result<()> {
 #[derive(clap::Parser)]
 #[clap(author, version, about)]
 struct Args {
-    /// Mesh file to render
+    /// Mesh file to render (can be specified more than once for multiple meshes)
     #[clap(short, long)]
     mesh_file: Vec<PathBuf>,
 
+    /// Whether to not read any Triangle attributes such as normals
     #[clap(long)]
     only_triangles: bool,
 
+    /// Whether to disable raytracing renderer
     #[clap(short, long)]
     no_raytracing: bool,
 
+    /// Whether to enable tracing for Tracy (https://github.com/wolfpld/tracy)
     #[clap(short, long)]
     tracing: bool,
 }
