@@ -73,13 +73,13 @@ impl<'device> Buffer<'device> {
             )
             .ok_or_else(|| anyhow::anyhow!("Failed to get memory index"))?;
             let info = vk::MemoryAllocateInfo::default()
-                    .allocation_size(req.size)
-                    .memory_type_index(index);
-            info.push_next(&mut vk::MemoryAllocateFlagsInfo::default().flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS));
-            let memory = device.allocate_memory(
-                &info,
-                None,
-            )?;
+                .allocation_size(req.size)
+                .memory_type_index(index);
+            info.push_next(
+                &mut vk::MemoryAllocateFlagsInfo::default()
+                    .flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS),
+            );
+            let memory = device.allocate_memory(&info, None)?;
             if let Some(host_memory) = host_memory {
                 let ptr = device.map_memory(memory, 0, req.size, vk::MemoryMapFlags::empty())?;
                 let mut map_slice = Align::new(ptr, align_of::<T>() as u64, req.size);

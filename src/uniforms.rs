@@ -11,7 +11,13 @@ pub struct PushConstants {
 }
 
 impl PushConstants {
-    pub fn new(extent: vk::Extent2D, translation: Point3<f32>, light_position: Vector4<f32>, zoom: f32, rotation: f32) -> Self {
+    pub fn new(
+        extent: vk::Extent2D,
+        translation: Point3<f32>,
+        light_position: Vector4<f32>,
+        zoom: f32,
+        rotation: f32,
+    ) -> Self {
         Self {
             light_position,
             model: Matrix4::from_axis_angle(Vector3::new(0.0, 1.0, 0.0), Deg(rotation)),

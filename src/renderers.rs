@@ -53,7 +53,11 @@ pub trait Renderer<'device> {
     fn graphics_pipeline(&self) -> Option<&ShaderPipeline> {
         None
     }
+    fn graphics_pipeline_mut(&mut self) -> Option<&mut ShaderPipeline<'device>> {
+        None
+    }
 
+    fn reload_graphics_pipeline(&mut self) {}
     fn process_window_event(&mut self, _event: &WindowEvent) {}
     fn process_device_event(&mut self, _event: &DeviceEvent) {}
 }

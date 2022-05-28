@@ -1,11 +1,13 @@
 use anyhow::Error;
 use ash::vk;
 use device_mesh::DeviceMesh;
+use hotwatch::Hotwatch;
 use log::{debug, error, info, warn};
 use renderers::{ray_tracing::RayTrace, RenderStyle};
 use std::{
     path::PathBuf,
     rc::Rc,
+    sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
 use tracing_log::LogTracer;
@@ -155,6 +157,29 @@ fn main() -> anyhow::Result<()> {
     let mut active_drawer_idx = 0;
     let mut last_switch = Instant::now();
     let mut render_style = RenderStyle::Normal;
+    let needs_reload = Arc::new(AtomicBool::new(false));
+
+    let mut hotwatch = Hotwatch::new();
+    if let Ok(hotwatch) = &mut hotwatch {
+        for r in renderers.iter_mut() {
+            for f in r
+                .graphics_pipeline()
+                .iter()
+                .flat_map(|p| p.shaders_source_files().iter())
+            {
+                let needs_reload = Arc::clone(&needs_reload);
+                if let Some(parent) = PathBuf::from(f).parent() {
+                    let _ = hotwatch.watch(parent, move |event| match event {
+                        hotwatch::Event::Create(changed) | hotwatch::Event::Write(changed) => {
+                            info!("Shader file {changed:?} changed. Trying to reload");
+                            needs_reload.store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        _ => (),
+                    });
+                }
+            }
+        }
+    }
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -163,6 +188,33 @@ fn main() -> anyhow::Result<()> {
             error!("{err:?}");
             exit();
         };
+
+        if needs_reload.load(std::sync::atomic::Ordering::Relaxed) {
+            for r in renderers.iter_mut() {
+                warn!("trying renderer {r:?}");
+                if let Some(p) = r.graphics_pipeline_mut() {
+                    warn!("got the pipeline");
+                    if let Err(err) = p.reload_sources() {
+                        warn!("Failed to reload shaders: {err}");
+                    }
+                }
+
+                r.reload_graphics_pipeline();
+                if let Err(err) = r.set_resolution(
+                    vulkan_app.surface_format(),
+                    vk::Extent2D {
+                        width: window.inner_size().width,
+                        height: window.inner_size().height,
+                    },
+                    vulkan_app.images(),
+                    vulkan_app.device_memory_properties(),
+                    render_style,
+                ) {
+                    fail(err)
+                };
+            }
+            needs_reload.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
 
         match event {
             Event::DeviceEvent { event, .. } => {

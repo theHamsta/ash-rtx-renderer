@@ -55,10 +55,7 @@ impl<'device> ShaderPipeline<'device> {
                 //alt_info,
             });
         }
-        let hot_reload_sources = shaders
-            .iter()
-            .map(|s| dbg!(s.info.get_source_file()))
-            .collect();
+        let hot_reload_sources = shaders.iter().map(|s| s.info.get_source_file()).collect();
         info!("hot_reload_sources: {hot_reload_sources:?}");
         Ok(Self {
             shaders,
@@ -227,39 +224,34 @@ impl<'device> ShaderPipeline<'device> {
         ))
     }
 
-    pub fn shaders_source_files(&mut self) -> &Vec<String> {
+    pub fn shaders_source_files(&self) -> &Vec<String> {
         &self.hot_reload_sources
     }
 
     pub fn reload_sources(&mut self) -> anyhow::Result<()> {
         for (shader, source) in self.shaders.iter_mut().zip(self.hot_reload_sources.iter()) {
-            dbg!(source);
+            info!("Trying to reload {source}");
             let output = Command::new("glslc")
-                .args([source, "--target-env=vulkan1.3", "-g", "-O", "-"])
+                .args([source, "--target-env=vulkan1.3", "-g", "-O", "-o", "-"])
                 .output()?;
             let bytes = output.stdout;
+            if !output.stderr.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Failure during shader compilation!: {}",
+                    String::from_utf8(output.stderr)
+                        .unwrap_or_else(|_err| "<unknown error>".into())
+                ));
+            }
 
-            let info = spirv_reflect::ShaderModule::load_u8_data(&bytes)
-                .map_err(|err| anyhow::anyhow!("{err}"))?;
-            debug!(
-                "Loaded shader {:?} ({:?}) in: {:?}, out: {:?} _push_constant_blocks {:?}",
-                info.get_source_file(),
-                info.get_shader_stage(),
-                info.enumerate_input_variables(None),
-                info.enumerate_output_variables(None),
-                info.enumerate_push_constant_blocks(None)
-            );
-
-            *shader = Shader {
-                module: unsafe {
-                    self.device.create_shader_module(
-                        &vk::ShaderModuleCreateInfo::default()
-                            .code(&read_spv(&mut Cursor::new(bytes))?),
-                        None,
-                    )?
-                },
-                info,
+            let new_module = unsafe {
+                self.device.create_shader_module(
+                    &vk::ShaderModuleCreateInfo::default()
+                        .code(&read_spv(&mut Cursor::new(bytes))?),
+                    None,
+                )?
             };
+            unsafe { self.device.destroy_shader_module(shader.module, None) };
+            shader.module = new_module;
         }
         Ok(())
     }
