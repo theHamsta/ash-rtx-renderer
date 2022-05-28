@@ -217,6 +217,15 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                         &[],
                     );
 
+                    self.device.cmd_push_constants(
+                        cmd,
+                        self.pipeline_layout.unwrap(),
+                        vk::ShaderStageFlags::RAYGEN_KHR,
+                        0,
+                        &std::mem::transmute::<PushConstants, [u8; size_of::<PushConstants>()]>(
+                            self.uniforms.unwrap(),
+                        ),
+                    );
                     trace!("cmd_trace_rays");
                     self.raytracing_tracing_ext.cmd_trace_rays(
                         cmd,

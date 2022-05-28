@@ -22,11 +22,11 @@ void main()
   const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
   vec2 d = inUV * 2.0 - 1.0;
 
-  mat4 mvp = PushConstants.proj * PushConstants.view * PushConstants.model;
-  mat4 viewInverse =inverse(mvp);
+  //mat4 mvp = PushConstants.proj * PushConstants.view * PushConstants.model;
+  mat4 viewInverse =inverse(PushConstants.view * PushConstants.model);
   vec4 origin = viewInverse * vec4(0,0,0,1);
-  vec4 target = viewInverse * vec4(d.x, d.y, 1, 1);
-  vec4 direction = viewInverse * vec4(normalize(target.xyz), 0);
+  vec4 target = inverse(PushConstants.proj * PushConstants.model) * vec4(d.x, d.y, 1, 1);
+  vec4 direction = inverse(PushConstants.view * PushConstants.model) * vec4(normalize(target.xyz), 0);
 
   uint rayFlags = gl_RayFlagsOpaqueEXT;
   uint cullMask = 0xff;
