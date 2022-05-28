@@ -199,7 +199,6 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                r.reload_graphics_pipeline();
                 if let Err(err) = r.set_resolution(
                     vulkan_app.surface_format(),
                     vk::Extent2D {

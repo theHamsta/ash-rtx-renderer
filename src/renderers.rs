@@ -57,7 +57,6 @@ pub trait Renderer<'device> {
         None
     }
 
-    fn reload_graphics_pipeline(&mut self) {}
     fn process_window_event(&mut self, _event: &WindowEvent) {}
     fn process_device_event(&mut self, _event: &DeviceEvent) {}
 }
