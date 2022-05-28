@@ -1,7 +1,7 @@
 pub mod color_sine;
+pub mod cuda;
 pub mod raster;
 pub mod ray_tracing;
-pub mod cuda;
 
 use std::rc::Rc;
 use std::time::Instant;

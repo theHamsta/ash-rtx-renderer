@@ -1,10 +1,11 @@
 use std::ffi::CStr;
 use std::intrinsics::transmute;
 use std::io::Cursor;
+use std::process::Command;
 
 use ash::vk::{VertexInputAttributeDescription, VertexInputBindingDescription};
 use ash::{util::read_spv, vk};
-use log::debug;
+use log::{debug, info};
 
 use crate::renderers::RenderStyle;
 
@@ -16,6 +17,7 @@ pub struct Shader {
 pub struct ShaderPipeline<'device> {
     shaders: Vec<Shader>,
     device: &'device ash::Device,
+    hot_reload_sources: Vec<String>,
 }
 
 impl Drop for ShaderPipeline<'_> {
@@ -53,7 +55,16 @@ impl<'device> ShaderPipeline<'device> {
                 //alt_info,
             });
         }
-        Ok(Self { shaders, device })
+        let hot_reload_sources = shaders
+            .iter()
+            .map(|s| dbg!(s.info.get_source_file()))
+            .collect();
+        info!("hot_reload_sources: {hot_reload_sources:?}");
+        Ok(Self {
+            shaders,
+            device,
+            hot_reload_sources,
+        })
     }
 
     pub fn make_graphics_pipeline(
@@ -214,6 +225,43 @@ impl<'device> ShaderPipeline<'device> {
             renderpass,
             pipeline_layout,
         ))
+    }
+
+    pub fn shaders_source_files(&mut self) -> &Vec<String> {
+        &self.hot_reload_sources
+    }
+
+    pub fn reload_sources(&mut self) -> anyhow::Result<()> {
+        for (shader, source) in self.shaders.iter_mut().zip(self.hot_reload_sources.iter()) {
+            dbg!(source);
+            let output = Command::new("glslc")
+                .args([source, "--target-env=vulkan1.3", "-g", "-O", "-"])
+                .output()?;
+            let bytes = output.stdout;
+
+            let info = spirv_reflect::ShaderModule::load_u8_data(&bytes)
+                .map_err(|err| anyhow::anyhow!("{err}"))?;
+            debug!(
+                "Loaded shader {:?} ({:?}) in: {:?}, out: {:?} _push_constant_blocks {:?}",
+                info.get_source_file(),
+                info.get_shader_stage(),
+                info.enumerate_input_variables(None),
+                info.enumerate_output_variables(None),
+                info.enumerate_push_constant_blocks(None)
+            );
+
+            *shader = Shader {
+                module: unsafe {
+                    self.device.create_shader_module(
+                        &vk::ShaderModuleCreateInfo::default()
+                            .code(&read_spv(&mut Cursor::new(bytes))?),
+                        None,
+                    )?
+                },
+                info,
+            };
+        }
+        Ok(())
     }
 
     pub fn make_rtx_pipeline(

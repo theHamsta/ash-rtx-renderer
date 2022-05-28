@@ -472,6 +472,14 @@ impl<'device> Renderer<'device> for Raster<'device> {
             self.update_push_constants();
         }
     }
+
+    fn shaders_source_files(&mut self) -> Option<Vec<String>> {
+        self.sh
+    }
+
+    fn reload_sources(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 impl Drop for Raster<'_> {
