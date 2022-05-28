@@ -1,5 +1,6 @@
 use anyhow::Context;
 use ash::vk;
+use log::trace;
 use std::{
     ffi::{c_void, CStr},
     mem::MaybeUninit,
@@ -52,12 +53,13 @@ impl Cuda {
             std::mem::transmute(instance.get_device_proc_addr(device, name.as_ptr()))
         });
 
+        let vec: Vec<u8> = include_bytes!("../../shaders/simple_cuda.cu.ptx").to_vec();
+
         let module = unsafe {
             let mut module = MaybeUninit::zeroed();
             (nvx_ext.create_cu_module_nvx)(
                 device,
-                &vk::CuModuleCreateInfoNVX::default()
-                    .data(include_bytes!("../../shaders/simple_cuda.cu.cubin")),
+                &vk::CuModuleCreateInfoNVX::default().data(&vec[..]),
                 null(),
                 module.as_mut_ptr(),
             )
@@ -102,6 +104,8 @@ impl<'device> Renderer<'device> for Cuda {
         start_instant: Instant,
         _swapchain_idx: usize,
     ) -> anyhow::Result<()> {
+        trace!("Draw!");
+
         unsafe {
             device.cmd_pipeline_barrier(
                 cmd,
@@ -161,6 +165,7 @@ impl<'device> Renderer<'device> for Cuda {
             let block_x = 16;
             let block_y = 16;
 
+            trace!("Launch CUDA kernel");
             (self.nvx_ext.cmd_cu_launch_kernel_nvx)(
                 cmd,
                 &vk::CuLaunchInfoNVX::default()

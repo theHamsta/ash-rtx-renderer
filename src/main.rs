@@ -120,12 +120,12 @@ fn main() -> anyhow::Result<()> {
     renderers.push(color_sine);
     debug!("Renderers: {renderers:?}");
 
-    //if vulkan_app.cuda_support() {
-        //match Cuda::new(vulkan_app.instance(), vulkan_app.device().handle()) {
-            //Ok(cuda) => renderers.push(RendererImpl::Cuda(cuda)),
-            //Err(err) => error!("Failed to create CUDA renderer {err}"),
-        //}
-    //}
+    if vulkan_app.cuda_support() {
+        match Cuda::new(vulkan_app.instance(), vulkan_app.device().handle()) {
+            Ok(cuda) => renderers.push(RendererImpl::Cuda(cuda)),
+            Err(err) => error!("Failed to create CUDA renderer {err}"),
+        }
+    }
 
     let meshes = meshes
         .iter()
@@ -251,6 +251,18 @@ fn main() -> anyhow::Result<()> {
                         ) => {
                             if renderers.len() > 2 {
                                 active_drawer_idx = 2;
+                                info!(
+                                    "Switched Drawer to {active_drawer_idx}: {:?}",
+                                    renderers[active_drawer_idx]
+                                );
+                            }
+                        }
+                        Some(
+                            winit::event::VirtualKeyCode::Numpad4
+                            | winit::event::VirtualKeyCode::Key4,
+                        ) => {
+                            if renderers.len() > 3 {
+                                active_drawer_idx = 3;
                                 info!(
                                     "Switched Drawer to {active_drawer_idx}: {:?}",
                                     renderers[active_drawer_idx]

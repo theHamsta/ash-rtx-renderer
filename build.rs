@@ -13,10 +13,10 @@ pub fn main() -> anyhow::Result<()> {
                 Some("cu") => Command::new("nvcc")
                     .args([
                         "-O3",
-                        "--cubin",
+                        "--ptx",
                         "-lineinfo",
                         "-o",
-                        &format!("{}.cubin", entry.to_string_lossy()),
+                        &format!("{}.ptx", entry.to_string_lossy()),
                         entry.to_str().unwrap(),
                     ])
                     .output()?,

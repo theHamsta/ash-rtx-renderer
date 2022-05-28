@@ -34,7 +34,7 @@ void main()
   vec3 n1 = normals.n[3 * index.y + 1];
   vec3 n2 = normals.n[3 * index.z + 2];
   vec3 normal = normalize(n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z);
-  hitValue = vec3(1.0, normal.xy);
+  hitValue = vec3(1.0, index.xy / 100.0);
   
   //prd.hitT                = gl_HitTEXT;
   //prd.primitiveID         = gl_PrimitiveID;

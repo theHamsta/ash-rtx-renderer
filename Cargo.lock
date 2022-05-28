@@ -64,7 +64,6 @@ dependencies = [
  "log",
  "ply-rs",
  "pretty_env_logger",
- "raw-window-handle 0.4.3",
  "raw-window-metal 0.2.0",
  "spirv-reflect",
  "thiserror",
