@@ -93,6 +93,17 @@ impl<'device> RayTrace<'device> {
             .map(|a| a.bottomlevel_as().len() as u32)
             .unwrap_or(0)
     }
+
+    fn destroy_descriptor_sets(&mut self) {
+        unsafe {
+            if let Some(pool) = self.descriptor_pool.take() {
+                self.descriptor_set
+                    .take()
+                    .map(|l| self.device.free_descriptor_sets(pool, &[l]));
+                self.device.destroy_descriptor_pool(pool, None);
+            }
+        }
+    }
 }
 
 impl std::fmt::Debug for RayTrace<'_> {
@@ -191,12 +202,12 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                     .stride(aligned_size);
 
                 let sbt_miss_region = vk::StridedDeviceAddressRegionKHR::default()
-                    .device_address(sbt_address + (self.num_instances() as u64) * aligned_size)
+                    .device_address(sbt_address + aligned_size)
                     .size(aligned_size)
                     .stride(aligned_size);
 
                 let sbt_hit_region = vk::StridedDeviceAddressRegionKHR::default()
-                    .device_address(sbt_address + (self.num_instances() as u64 + 1) * aligned_size)
+                    .device_address(sbt_address + 2 * aligned_size)
                     .size(aligned_size)
                     .stride(aligned_size);
 
@@ -308,8 +319,9 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         let device = self.device;
         debug!("Set resolution: {size:?} images: {images:?}");
         self.destroy_images()?;
-        self.size = size;
+        self.destroy_descriptor_sets();
         self.update_push_constants();
+        self.size = size;
 
         let mut shader_groups = vec![
             // raygen
@@ -387,6 +399,12 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 self.raytracing_tracing_ext
                     .get_ray_tracing_shader_group_handles(pipeline, 0, 1, handle_size as usize)
             }?;
+
+            let missdata = unsafe {
+                self.raytracing_tracing_ext
+                    .get_ray_tracing_shader_group_handles(pipeline, 0, 1, handle_size as usize)
+            }?;
+
             let chit_data = unsafe {
                 self.raytracing_tracing_ext
                     .get_ray_tracing_shader_group_handles(
@@ -395,10 +413,6 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                         self.num_instances(),
                         handle_size as usize * self.num_instances() as usize,
                     )
-            }?;
-            let missdata = unsafe {
-                self.raytracing_tracing_ext
-                    .get_ray_tracing_shader_group_handles(pipeline, 0, 1, handle_size as usize)
             }?;
 
             let table_size = aligned_size(
@@ -422,6 +436,14 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 self.rt_pipeline_properties.shader_group_base_alignment,
             ) as usize;
             cur.set_position(written as u64);
+
+            written += cur.write(&missdata)?;
+            written = aligned_size(
+                written as u32,
+                self.rt_pipeline_properties.shader_group_base_alignment,
+            ) as usize;
+            cur.set_position(written as u64);
+
             for (i, mesh) in self
                 .toplevel_as
                 .as_ref()
@@ -453,11 +475,6 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 ) as usize;
                 cur.set_position(written as u64);
             }
-            written += cur.write(&missdata)?;
-            written = aligned_size(
-                written as u32,
-                self.rt_pipeline_properties.shader_group_base_alignment,
-            ) as usize;
             assert_eq!(written, table_size as usize);
 
             Buffer::new(
@@ -465,10 +482,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 device_memory_properties,
                 &vk::BufferCreateInfo::default()
                     .size(table_size as u64)
-                    .usage(
-                        vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
-                            | vk::BufferUsageFlags::TRANSFER_SRC,
-                    ),
+                    .usage(vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS),
                 Some(&table_data),
             )?
         };
@@ -601,13 +615,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
 impl Drop for RayTrace<'_> {
     fn drop(&mut self) {
         let _ = self.destroy_images();
-        unsafe {
-            if let Some(pool) = self.descriptor_pool {
-                self.descriptor_set
-                    .map(|l| self.device.free_descriptor_sets(pool, &[l]));
-                self.device.destroy_descriptor_pool(pool, None);
-            }
-        }
+        self.destroy_descriptor_sets();
     }
 }
 

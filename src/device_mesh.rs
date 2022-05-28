@@ -72,10 +72,12 @@ impl<'device> Buffer<'device> {
                 },
             )
             .ok_or_else(|| anyhow::anyhow!("Failed to get memory index"))?;
-            let memory = device.allocate_memory(
-                &vk::MemoryAllocateInfo::default()
+            let info = vk::MemoryAllocateInfo::default()
                     .allocation_size(req.size)
-                    .memory_type_index(index),
+                    .memory_type_index(index);
+            info.push_next(&mut vk::MemoryAllocateFlagsInfo::default().flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS));
+            let memory = device.allocate_memory(
+                &info,
                 None,
             )?;
             if let Some(host_memory) = host_memory {
@@ -196,7 +198,9 @@ impl<'device> DeviceMesh<'device> {
     }
 
     pub fn indices_device_address(&self) -> Option<vk::DeviceAddress> {
-        self.buffers.get(&AttributeType::Index).map(|b| b.device_address())
+        self.buffers
+            .get(&AttributeType::Index)
+            .map(|b| b.device_address())
     }
 
     pub fn normals(&self) -> Option<&vk::Buffer> {
@@ -204,7 +208,9 @@ impl<'device> DeviceMesh<'device> {
     }
 
     pub fn normals_device_address(&self) -> Option<vk::DeviceAddress> {
-        self.buffers.get(&AttributeType::Normals).map(|b| b.device_address())
+        self.buffers
+            .get(&AttributeType::Normals)
+            .map(|b| b.device_address())
     }
 
     pub fn num_triangles(&self) -> usize {
