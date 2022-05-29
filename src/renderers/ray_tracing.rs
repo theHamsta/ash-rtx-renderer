@@ -561,6 +561,10 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
         Some(&self.shader_pipeline)
     }
 
+    fn graphics_pipeline_mut(&mut self) -> Option<&mut ShaderPipeline<'device>> {
+        Some(&mut self.shader_pipeline)
+    }
+
     fn process_device_event(&mut self, event: &winit::event::DeviceEvent) {
         #[allow(clippy::single_match)]
         match event {
