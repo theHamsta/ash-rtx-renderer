@@ -44,10 +44,11 @@ void main()
   vec3 n2 = normals.n[index.z];
   vec3 normal = normalize(n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z);
 
-  mat4 mvp = PushConstants.proj * PushConstants.view * PushConstants.model;
-  normal = mat3(transpose(inverse(mvp))) * normal;
-  //hitValue = ivec3(gl_LaunchIDEXT.x, gl_PrimitiveID, gl_PrimitiveID);
-  hitValue = normal;
+  //mat4 mvp = PushConstants.proj * PushConstants.model;
+  //normal = mat3(transpose(inverse(mvp))) * normal;
+  normal = normalize(vec3(normal * gl_WorldToObjectEXT));
+
+  hitValue = normal + 0.5;
   
   //prd.hitT                = gl_HitTEXT;
   //prd.primitiveID         = gl_PrimitiveID;
