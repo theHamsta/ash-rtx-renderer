@@ -56,8 +56,8 @@ impl<'device> RayTrace<'device> {
                 device,
                 &[
                     &include_bytes!("../../shaders/raygen.glsl.spirv")[..],
-                    &include_bytes!("../../shaders/closest_hit.glsl.spirv")[..],
                     &include_bytes!("../../shaders/miss.glsl.spirv")[..],
+                    &include_bytes!("../../shaders/closest_hit.glsl.spirv")[..],
                 ],
             )?,
             translation: Point3 {
@@ -198,18 +198,18 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 ) as u64;
                 let sbt_raygen_region = vk::StridedDeviceAddressRegionKHR::default()
                     .device_address(sbt_address)
-                    .size(aligned_size)
+                    .size(self.rt_pipeline_properties.shader_group_handle_size.into())
                     .stride(aligned_size);
 
                 let sbt_miss_region = vk::StridedDeviceAddressRegionKHR::default()
                     .device_address(sbt_address + aligned_size)
                     .size(aligned_size)
-                    .stride(aligned_size);
+                    .stride(self.rt_pipeline_properties.shader_group_handle_size.into());
 
                 let sbt_hit_region = vk::StridedDeviceAddressRegionKHR::default()
                     .device_address(sbt_address + 2 * aligned_size)
-                    .size(aligned_size)
-                    .stride(aligned_size);
+                    .size(aligned_size * self.num_instances() as u64)
+                    .stride(self.rt_pipeline_properties.shader_group_handle_size.into());
 
                 let sbt_call_region = vk::StridedDeviceAddressRegionKHR::default();
 
@@ -281,7 +281,8 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             / meshes.iter().map(|mesh| mesh.num_vertices()).sum::<usize>() as f32;
         let bottomlevel_as = meshes
             .iter()
-            .flat_map(|m| {
+            .enumerate()
+            .flat_map(|(i, m)| {
                 Some((
                     BottomLevelAccelerationStructure::build_bottomlevel(
                         cmd,
@@ -292,7 +293,20 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                         graphics_queue,
                     )
                     .ok()?,
-                    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                    [
+                        1.0,
+                        0.0,
+                        0.0,
+                        100.0 * i as f32,
+                        0.0,
+                        1.0 + i as f32,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                    ],
                 ))
             })
             .collect();
@@ -332,26 +346,26 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 .any_hit_shader(vk::SHADER_UNUSED_KHR)
                 .intersection_shader(vk::SHADER_UNUSED_KHR),
         ];
+        shader_groups.push(
+            // miss
+            vk::RayTracingShaderGroupCreateInfoKHR::default()
+                .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
+                .general_shader(1)
+                .closest_hit_shader(vk::SHADER_UNUSED_KHR)
+                .any_hit_shader(vk::SHADER_UNUSED_KHR)
+                .intersection_shader(vk::SHADER_UNUSED_KHR),
+        );
         for _ in 0..self.num_instances() {
             shader_groups.push(
                 // closest
                 vk::RayTracingShaderGroupCreateInfoKHR::default()
                     .ty(vk::RayTracingShaderGroupTypeKHR::TRIANGLES_HIT_GROUP)
                     .general_shader(vk::SHADER_UNUSED_KHR)
-                    .closest_hit_shader(1)
+                    .closest_hit_shader(2)
                     .any_hit_shader(vk::SHADER_UNUSED_KHR)
                     .intersection_shader(vk::SHADER_UNUSED_KHR),
             );
         }
-        shader_groups.push(
-            // miss
-            vk::RayTracingShaderGroupCreateInfoKHR::default()
-                .ty(vk::RayTracingShaderGroupTypeKHR::GENERAL)
-                .general_shader(2)
-                .closest_hit_shader(vk::SHADER_UNUSED_KHR)
-                .any_hit_shader(vk::SHADER_UNUSED_KHR)
-                .intersection_shader(vk::SHADER_UNUSED_KHR),
-        );
 
         let descriptor_set_layout = unsafe {
             let binding_flags_inner = [
@@ -390,7 +404,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
             &[vk::PushConstantRange::default()
                 .offset(0)
                 .size(size_of::<PushConstants>().try_into()?)
-                .stage_flags(ShaderStageFlags::RAYGEN_KHR)],
+                .stage_flags(ShaderStageFlags::RAYGEN_KHR | ShaderStageFlags::CLOSEST_HIT_KHR)],
         )?;
 
         let sbt = {
@@ -402,14 +416,14 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
 
             let missdata = unsafe {
                 self.raytracing_tracing_ext
-                    .get_ray_tracing_shader_group_handles(pipeline, 0, 1, handle_size as usize)
+                    .get_ray_tracing_shader_group_handles(pipeline, 1, 1, handle_size as usize)
             }?;
 
             let chit_data = unsafe {
                 self.raytracing_tracing_ext
                     .get_ray_tracing_shader_group_handles(
                         pipeline,
-                        0,
+                        2,
                         self.num_instances(),
                         handle_size as usize * self.num_instances() as usize,
                     )
@@ -420,7 +434,8 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                 self.rt_pipeline_properties.shader_group_base_alignment,
             ) + self.num_instances()
                 * aligned_size(
-                    chit_data.len() as u32 + 2 * NUM_ATTRIBUTES as u32,
+                    self.rt_pipeline_properties.shader_group_handle_size as u32
+                        + 2 * NUM_ATTRIBUTES as u32,
                     self.rt_pipeline_properties.shader_group_base_alignment,
                 )
                 + aligned_size(

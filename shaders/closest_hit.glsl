@@ -9,7 +9,7 @@
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
 hitAttributeEXT vec3 attribs;
-layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+//layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 
 layout(buffer_reference, buffer_reference_align = 8, scalar)
 buffer NormalBuffer {
@@ -25,16 +25,29 @@ layout(shaderRecordEXT, std430) buffer SBT {
   NormalBuffer normals;
 };
 
+layout( push_constant ) uniform constants
+{
+    vec4 light;
+    mat4 view;
+    mat4 model;
+    mat4 proj;
+} PushConstants;
+
 void main()
 {
   const vec3 barycentrics = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
 
+
   uvec3 index = indices.i[gl_PrimitiveID];
-  vec3 n0 = normals.n[3 * index.x + 0];
-  vec3 n1 = normals.n[3 * index.y + 1];
-  vec3 n2 = normals.n[3 * index.z + 2];
+  vec3 n0 = normals.n[index.x];
+  vec3 n1 = normals.n[index.y];
+  vec3 n2 = normals.n[index.z];
   vec3 normal = normalize(n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z);
-  hitValue = vec3(1.0, index.xy / 100.0);
+
+  mat4 mvp = PushConstants.proj * PushConstants.view * PushConstants.model;
+  normal = mat3(transpose(inverse(mvp))) * normal;
+  //hitValue = ivec3(gl_LaunchIDEXT.x, gl_PrimitiveID, gl_PrimitiveID);
+  hitValue = normal;
   
   //prd.hitT                = gl_HitTEXT;
   //prd.primitiveID         = gl_PrimitiveID;
