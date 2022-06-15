@@ -26,7 +26,7 @@ pub fn main() -> anyhow::Result<()> {
                         "cs_6_5",
                         "-spirv",
                         "-Fo",
-                        &format!("{}.ptx", entry.to_string_lossy()),
+                        &format!("{}.spirv", entry.to_string_lossy()),
                         entry.to_str().unwrap(),
                     ])
                     .output()?,
