@@ -20,6 +20,16 @@ pub fn main() -> anyhow::Result<()> {
                         entry.to_str().unwrap(),
                     ])
                     .output()?,
+                Some("hlsl") => Command::new("dxc")
+                    .args([
+                        "-T",
+                        "cs_6_5",
+                        "-spirv",
+                        "-Fo",
+                        &format!("{}.ptx", entry.to_string_lossy()),
+                        entry.to_str().unwrap(),
+                    ])
+                    .output()?,
                 Some("spirv") | Some("ptx") | Some("cubin") => continue,
                 _ => Command::new("glslc")
                     .args([
