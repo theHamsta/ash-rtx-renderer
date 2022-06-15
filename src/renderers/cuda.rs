@@ -18,6 +18,7 @@ pub struct Cuda {
     device: vk::Device,
     surface_format: vk::SurfaceFormatKHR,
     size: vk::Extent2D,
+    sampler: vk::Sampler,
 }
 
 impl std::fmt::Debug for Cuda {
@@ -44,13 +45,13 @@ fn div_up(x: u32, y: u32) -> u32 {
 }
 
 impl Cuda {
-    pub fn new(instance: &ash::Instance, device: vk::Device) -> anyhow::Result<Self> {
+    pub fn new(instance: &ash::Instance, device: &ash::Device) -> anyhow::Result<Self> {
         let nvx_ext = vk::NvxBinaryImportFn::load(|name| unsafe {
-            std::mem::transmute(instance.get_device_proc_addr(device, name.as_ptr()))
+            std::mem::transmute(instance.get_device_proc_addr(device.handle(), name.as_ptr()))
         });
 
         let nvx_image_view_ext = vk::NvxImageViewHandleFn::load(|name| unsafe {
-            std::mem::transmute(instance.get_device_proc_addr(device, name.as_ptr()))
+            std::mem::transmute(instance.get_device_proc_addr(device.handle(), name.as_ptr()))
         });
 
         let vec: Vec<u8> = include_bytes!("../../shaders/simple_cuda.cu.ptx").to_vec();
@@ -58,7 +59,7 @@ impl Cuda {
         let module = unsafe {
             let mut module = MaybeUninit::zeroed();
             (nvx_ext.create_cu_module_nvx)(
-                device,
+                device.handle(),
                 &vk::CuModuleCreateInfoNVX::default().data(&vec[..]),
                 null(),
                 module.as_mut_ptr(),
@@ -69,7 +70,7 @@ impl Cuda {
         let function = unsafe {
             let mut function = MaybeUninit::zeroed();
             (nvx_ext.create_cu_function_nvx)(
-                device,
+                device.handle(),
                 &vk::CuFunctionCreateInfoNVX::default()
                     .name(CStr::from_bytes_with_nul_unchecked(b"simple\0"))
                     .module(module),
@@ -80,17 +81,25 @@ impl Cuda {
             .context("Failed to load CUDA function")?
         };
 
+        let sampler = unsafe {
+            device.create_sampler(
+                &vk::SamplerCreateInfo::default(),
+                None,
+            )?
+        };
+
         Ok(Self {
             module,
             function,
             nvx_ext,
             nvx_image_view_ext,
-            device,
+            device: device.handle(),
             surface_format: vk::SurfaceFormatKHR::default().format(vk::Format::R8G8B8A8_SNORM),
             size: vk::Extent2D {
                 width: 0,
                 height: 0,
             },
+            sampler,
         })
     }
 }
@@ -148,19 +157,15 @@ impl<'device> Renderer<'device> for Cuda {
                 })
                 .image(image);
             let image_view = device.create_image_view(&create_view_info, None)?;
-            let surface = {
-                let mut surface = MaybeUninit::zeroed();
-
-                (self.nvx_image_view_ext.get_image_view_address_nvx)(
-                    device.handle(),
-                    image_view,
-                    surface.as_mut_ptr(),
-                )
-                .result_with_success(surface.assume_init())
-            }?;
+            let handle_info = vk::ImageViewHandleInfoNVX::default()
+                .image_view(image_view)
+                .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+                .sampler(self.sampler);
+            let surface =
+                (self.nvx_image_view_ext.get_image_view_handle_nvx)(device.handle(), &handle_info);
 
             let t = (start_instant.elapsed().as_secs_f32().sin() + 1.0) * 0.5;
-            let vk::Extent2D { width, height } = self.size;
+            let vk::Extent2D { height, width } = self.size;
 
             let block_x = 16;
             let block_y = 16;
@@ -181,7 +186,7 @@ impl<'device> Renderer<'device> for Cuda {
                         (&width) as *const u32 as *const c_void,
                         (&height) as *const u32 as *const c_void,
                         (&t) as *const f32 as *const c_void,
-                        (&surface.device_address) as *const u64 as *const c_void,
+                        (&surface) as *const u32 as *const c_void,
                     ]),
             );
 

@@ -381,7 +381,7 @@ impl<'device> Renderer<'device> for RayTrace<'device> {
                         vk::DescriptorSetLayoutBinding::default()
                             .descriptor_count(1)
                             .descriptor_type(vk::DescriptorType::ACCELERATION_STRUCTURE_KHR)
-                            .stage_flags(vk::ShaderStageFlags::RAYGEN_KHR)
+                            .stage_flags(vk::ShaderStageFlags::RAYGEN_KHR | vk::ShaderStageFlags::CLOSEST_HIT_KHR)
                             .binding(0),
                         vk::DescriptorSetLayoutBinding::default()
                             .descriptor_count(1)
