@@ -68,7 +68,7 @@ pub enum RendererImpl<'device> {
     ColorSine(ColorSine),
     Raster(Raster<'device>),
     RayTrace(RayTrace<'device>),
-    Cuda(Cuda),
+    Cuda(Cuda<'device>),
 }
 
 #[derive(Debug, Copy, Eq, PartialEq, Clone)]

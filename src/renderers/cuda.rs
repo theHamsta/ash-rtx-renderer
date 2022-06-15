@@ -10,32 +10,34 @@ use std::{
 
 use super::{RenderStyle, Renderer};
 
-pub struct Cuda {
+pub struct Cuda<'device> {
     module: vk::CuModuleNVX,
     function: vk::CuFunctionNVX,
     nvx_ext: vk::NvxBinaryImportFn,
     nvx_image_view_ext: vk::NvxImageViewHandleFn,
-    device: vk::Device,
     surface_format: vk::SurfaceFormatKHR,
     size: vk::Extent2D,
     sampler: vk::Sampler,
+    device: &'device ash::Device,
 }
 
-impl std::fmt::Debug for Cuda {
+impl std::fmt::Debug for Cuda<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Cuda")
             .field("module", &self.module)
             .field("function", &self.function)
-            .field("device", &self.device)
+            .field("device", &self.device.handle())
             .finish()
     }
 }
 
-impl Drop for Cuda {
+impl Drop for Cuda<'_> {
     fn drop(&mut self) {
         unsafe {
-            (self.nvx_ext.destroy_cu_function_nvx)(self.device, self.function, null());
-            (self.nvx_ext.destroy_cu_module_nvx)(self.device, self.module, null());
+            let _ = self.device.device_wait_idle();
+            self.device.destroy_sampler(self.sampler, None);
+            (self.nvx_ext.destroy_cu_function_nvx)(self.device.handle(), self.function, null());
+            (self.nvx_ext.destroy_cu_module_nvx)(self.device.handle(), self.module, null());
         }
     }
 }
@@ -44,8 +46,8 @@ fn div_up(x: u32, y: u32) -> u32 {
     (x + y - 1) / y
 }
 
-impl Cuda {
-    pub fn new(instance: &ash::Instance, device: &ash::Device) -> anyhow::Result<Self> {
+impl<'device> Cuda<'device> {
+    pub fn new(instance: &ash::Instance, device: &'device ash::Device) -> anyhow::Result<Self> {
         let nvx_ext = vk::NvxBinaryImportFn::load(|name| unsafe {
             std::mem::transmute(instance.get_device_proc_addr(device.handle(), name.as_ptr()))
         });
@@ -81,19 +83,14 @@ impl Cuda {
             .context("Failed to load CUDA function")?
         };
 
-        let sampler = unsafe {
-            device.create_sampler(
-                &vk::SamplerCreateInfo::default(),
-                None,
-            )?
-        };
+        let sampler = unsafe { device.create_sampler(&vk::SamplerCreateInfo::default(), None)? };
 
         Ok(Self {
             module,
             function,
             nvx_ext,
             nvx_image_view_ext,
-            device: device.handle(),
+            device,
             surface_format: vk::SurfaceFormatKHR::default().format(vk::Format::R8G8B8A8_SNORM),
             size: vk::Extent2D {
                 width: 0,
@@ -104,7 +101,7 @@ impl Cuda {
     }
 }
 
-impl<'device> Renderer<'device> for Cuda {
+impl<'device> Renderer<'device> for Cuda<'device> {
     fn draw(
         &self,
         device: &ash::Device,
