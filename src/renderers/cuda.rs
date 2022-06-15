@@ -153,6 +153,13 @@ impl<'device> Renderer<'device> for Cuda<'device> {
                     layer_count: 1,
                 })
                 .image(image);
+
+            let time = (start_instant.elapsed().as_secs_f32().sin() + 1.0) * 0.5;
+            let vk::Extent2D { height, width } = self.size;
+
+            let block_x = 16;
+            let block_y = 16;
+
             let image_view = device.create_image_view(&create_view_info, None)?;
             let handle_info = vk::ImageViewHandleInfoNVX::default()
                 .image_view(image_view)
@@ -160,12 +167,6 @@ impl<'device> Renderer<'device> for Cuda<'device> {
                 .sampler(self.sampler);
             let surface =
                 (self.nvx_image_view_ext.get_image_view_handle_nvx)(device.handle(), &handle_info);
-
-            let t = (start_instant.elapsed().as_secs_f32().sin() + 1.0) * 0.5;
-            let vk::Extent2D { height, width } = self.size;
-
-            let block_x = 16;
-            let block_y = 16;
 
             trace!("Launch CUDA kernel");
             (self.nvx_ext.cmd_cu_launch_kernel_nvx)(
@@ -182,7 +183,7 @@ impl<'device> Renderer<'device> for Cuda<'device> {
                     .params(&[
                         (&width) as *const u32 as *const c_void,
                         (&height) as *const u32 as *const c_void,
-                        (&t) as *const f32 as *const c_void,
+                        (&time) as *const f32 as *const c_void,
                         (&surface) as *const u32 as *const c_void,
                     ]),
             );
