@@ -8,8 +8,8 @@ __global__ void simple(int width, int height, float time,
   if (x >= width || y >= height) {
     return;
   }
-  unsigned char val = x % 255;
-  surf2Dwrite(uchar4{val, 0, 0, 255}, tex, x, y);
+  unsigned char val = (x % 255) * time;
+  surf2Dwrite(uchar4{val, 0, 0, 255}, tex, x * 4, y);
 }
 
 }
