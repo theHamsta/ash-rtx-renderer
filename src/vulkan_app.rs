@@ -148,9 +148,7 @@ impl VulkanApp {
 
             let mut extensions = HashSet::new();
             for ext in instance.enumerate_device_extension_properties(physical_device)? {
-                extensions.insert(
-                    CStr::from_ptr(std::mem::transmute(ext.extension_name.as_ptr())).to_owned(),
-                );
+                extensions.insert(CStr::from_ptr(ext.extension_name.as_ptr()).to_owned());
                 debug!("Device supports: {ext:?}");
             }
             let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
