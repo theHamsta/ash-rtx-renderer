@@ -3,7 +3,7 @@ TODOs
 - [x] depth buffers
 - [x] shading
 - [~] panning
-- [~] rtx rendering
+- [x] rtx rendering
 - [-] meshlet rendering
 - [-] ui?
 
