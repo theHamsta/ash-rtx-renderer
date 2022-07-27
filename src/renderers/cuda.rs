@@ -192,7 +192,7 @@ impl<'device> Renderer<'device> for Cuda<'device> {
             // EXTERNAL
             device.cmd_pipeline_barrier(
                 cmd,
-                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
                 vk::PipelineStageFlags::BOTTOM_OF_PIPE,
                 vk::DependencyFlags::default(),
                 &[],
