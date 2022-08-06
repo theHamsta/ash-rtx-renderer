@@ -69,7 +69,7 @@ impl<'device> ShaderPipeline<'device> {
         device: &ash::Device,
         scissors: &[vk::Rect2D],
         viewports: &[vk::Viewport],
-        surface_format: vk::SurfaceFormatKHR,
+        format: vk::Format,
         vertex_input_attribute_descriptions: &[VertexInputAttributeDescription],
         vertex_input_binding_descriptions: &[VertexInputBindingDescription],
         push_constant_ranges: &[vk::PushConstantRange], // TODO: do this via reflection
@@ -158,7 +158,7 @@ impl<'device> ShaderPipeline<'device> {
 
         let renderpass_attachments = [
             vk::AttachmentDescription {
-                format: surface_format.format,
+                format,
                 samples: vk::SampleCountFlags::TYPE_1,
                 load_op: vk::AttachmentLoadOp::CLEAR,
                 store_op: vk::AttachmentStoreOp::STORE,

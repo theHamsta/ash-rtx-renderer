@@ -308,7 +308,7 @@ impl<'device> Renderer<'device> for Raster<'device> {
             device,
             &self.scissors,
             &self.viewports,
-            surface_format,
+            surface_format.format,
             &vertex_attribute_desc,
             &vertex_binding_desc,
             &[vk::PushConstantRange::default()
