@@ -22,7 +22,7 @@ use winit::{
 };
 
 use crate::{
-    renderers::{color_sine::ColorSine, cuda::Cuda, raster::Raster, Renderer, RendererImpl},
+    renderers::{color_sine::ColorSine, raster::Raster, Renderer, RendererImpl},
     vulkan_app::{TracingMode, VulkanApp},
 };
 
@@ -124,13 +124,6 @@ fn main() -> anyhow::Result<()> {
     let color_sine = RendererImpl::ColorSine(ColorSine::default());
     renderers.push(color_sine);
     debug!("Renderers: {renderers:?}");
-
-    if vulkan_app.cuda_support() {
-        match Cuda::new(vulkan_app.instance(), device) {
-            Ok(cuda) => renderers.push(RendererImpl::Cuda(cuda)),
-            Err(err) => error!("Failed to create CUDA renderer: {err}"),
-        }
-    }
 
     let meshes = meshes
         .iter()

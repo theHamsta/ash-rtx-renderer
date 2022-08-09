@@ -51,7 +51,6 @@ pub struct VulkanApp {
     device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     physical_device: vk::PhysicalDevice,
     tracing_mode: TracingMode,
-    cuda_support: bool,
     raytracing_support: bool,
 }
 
@@ -176,15 +175,6 @@ impl VulkanApp {
                     &mut enabled_extension_names,
                 );
             info!("Raytracing support: {raytracing_support}");
-            let cuda_support = add_if_supported(
-                &extensions,
-                &[
-                    vk::NvxBinaryImportFn::name(),
-                    vk::NvxImageViewHandleFn::name(),
-                ],
-                &mut enabled_extension_names,
-            );
-            info!("CUDA support: {cuda_support}");
 
             let queue_create_info = [vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_family_index)
@@ -294,7 +284,6 @@ impl VulkanApp {
                 },
                 device_memory_properties,
                 tracing_mode,
-                cuda_support,
                 raytracing_support,
             })
         }
@@ -443,10 +432,6 @@ impl VulkanApp {
 
     pub fn physical_device(&self) -> vk::PhysicalDevice {
         self.physical_device
-    }
-
-    pub fn cuda_support(&self) -> bool {
-        self.cuda_support
     }
 
     pub fn raytracing_support(&self) -> bool {

@@ -1,5 +1,4 @@
 pub mod color_sine;
-pub mod cuda;
 pub mod raster;
 pub mod ray_tracing;
 
@@ -14,7 +13,6 @@ use crate::device_mesh::DeviceMesh;
 use crate::shader::ShaderPipeline;
 
 use self::color_sine::ColorSine;
-use self::cuda::Cuda;
 use self::raster::Raster;
 use self::ray_tracing::RayTrace;
 
@@ -68,7 +66,6 @@ pub enum RendererImpl<'device> {
     ColorSine(ColorSine),
     Raster(Raster<'device>),
     RayTrace(RayTrace<'device>),
-    Cuda(Cuda<'device>),
 }
 
 #[derive(Debug, Copy, Eq, PartialEq, Clone)]
