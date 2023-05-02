@@ -1,6 +1,6 @@
-#![feature(exit_status_error)]
 use std::process::Command;
 
+use anyhow::bail;
 use glob::glob;
 
 pub fn main() -> anyhow::Result<()> {
@@ -45,7 +45,9 @@ pub fn main() -> anyhow::Result<()> {
 
             eprintln!("{}", String::from_utf8(output.stdout)?);
             eprintln!("{}", String::from_utf8(output.stderr)?);
-            output.status.exit_ok()?;
+            if output.status.success() {
+                bail!("Failed to run shader compiler");
+            }
         }
     }
 
