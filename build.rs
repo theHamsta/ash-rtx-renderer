@@ -45,7 +45,7 @@ pub fn main() -> anyhow::Result<()> {
 
             eprintln!("{}", String::from_utf8(output.stdout)?);
             eprintln!("{}", String::from_utf8(output.stderr)?);
-            if output.status.success() {
+            if !output.status.success() {
                 bail!("Failed to run shader compiler");
             }
         }
