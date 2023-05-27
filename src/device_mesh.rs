@@ -75,10 +75,9 @@ impl<'device> Buffer<'device> {
             let info = vk::MemoryAllocateInfo::default()
                 .allocation_size(req.size)
                 .memory_type_index(index);
-            info.push_next(
-                &mut vk::MemoryAllocateFlagsInfo::default()
-                    .flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS),
-            );
+            let mut flag_info = vk::MemoryAllocateFlagsInfo::default()
+                .flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS);
+            let info = info.push_next(&mut flag_info);
             let memory = device.allocate_memory(&info, None)?;
             if let Some(host_memory) = host_memory {
                 let ptr = device.map_memory(memory, 0, req.size, vk::MemoryMapFlags::empty())?;

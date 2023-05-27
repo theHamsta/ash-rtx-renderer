@@ -203,9 +203,11 @@ impl VulkanApp {
                     .enabled_extension_names(&enabled_extension_names)
                     .queue_create_infos(&queue_create_info)
             };
-            let mut physical_device_features = vk::PhysicalDeviceFeatures2::default();
-            physical_device_features.push_next(&mut vk::PhysicalDeviceVulkan11Features::default());
-            physical_device_features.push_next(&mut vk::PhysicalDeviceVulkan12Features::default());
+            let mut vulkan11_features = vk::PhysicalDeviceVulkan11Features::default();
+            let mut vulkan12_features = vk::PhysicalDeviceVulkan12Features::default();
+            let mut physical_device_features = vk::PhysicalDeviceFeatures2::default()
+                .push_next(&mut vulkan11_features)
+                .push_next(&mut vulkan12_features);
             device_create_info.push_next(&mut physical_device_features);
             let device = instance.create_device(physical_device, &device_create_info, None)?;
             let swapchain_fn = khr::Swapchain::new(&instance, &device);
